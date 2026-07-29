@@ -1,0 +1,16 @@
+services:
+  compactor:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      COMPACTOR_REDIRECTS_FILE: /etc/compactor/redirects.json
+      COMPACTOR_EVENTS_FILE: /var/lib/compactor/events.jsonl
+      RUST_LOG: compactor=info
+    volumes:
+      - ./examples/redirects.json:/etc/compactor/redirects.json:ro
+      - compactor-events:/var/lib/compactor
+    restart: unless-stopped
+
+volumes:
+  compactor-events:

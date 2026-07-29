@@ -1,0 +1,7 @@
+target
+.git
+.github
+data
+*.jsonl
+.env
+.DS_Store

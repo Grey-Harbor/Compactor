@@ -1,0 +1,14 @@
+{
+  "redirects": [
+    {
+      "id": "project-home",
+      "canonical_url": "http://localhost:8080/project",
+      "redirect_url": "https://example.com/projects/compactor",
+      "status_code": 302,
+      "response_headers": {
+        "Cache-Control": "public, max-age=300",
+        "X-Robots-Tag": "noindex"
+      }
+    }
+  ]
+}
