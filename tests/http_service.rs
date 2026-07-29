@@ -1,0 +1,282 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use axum::{
+    body::{Body, to_bytes},
+    extract::ConnectInfo,
+};
+use compactor::{
+    AppState, CanonicalUrl, HeaderCaptureLimits, JsonRedirectSource, ProxyConfig, RedirectEvent,
+    RedirectEventSink, RedirectEventSinkError, RedirectSource, RedirectSourceError, router,
+};
+use http::{Method, Request, StatusCode, header};
+use tokio::sync::Mutex;
+use tower::ServiceExt;
+
+#[derive(Default)]
+struct RecordingSink {
+    events: Mutex<Vec<RedirectEvent>>,
+}
+
+#[async_trait]
+impl RedirectEventSink for RecordingSink {
+    async fn emit(&self, event: &RedirectEvent) -> Result<(), RedirectEventSinkError> {
+        self.events.lock().await.push(event.clone());
+        Ok(())
+    }
+}
+
+struct FailingSink;
+
+#[async_trait]
+impl RedirectEventSink for FailingSink {
+    async fn emit(&self, _event: &RedirectEvent) -> Result<(), RedirectEventSinkError> {
+        Err(RedirectEventSinkError::new("disk full"))
+    }
+}
+
+struct FailingSource;
+
+impl RedirectSource for FailingSource {
+    fn resolve(
+        &self,
+        _canonical_url: &CanonicalUrl,
+    ) -> Result<Option<compactor::RedirectDefinition>, RedirectSourceError> {
+        Err(RedirectSourceError::new("source unavailable"))
+    }
+}
+
+fn source() -> Arc<dyn RedirectSource> {
+    Arc::new(
+        JsonRedirectSource::from_json(
+            r#"{
+              "redirects": [
+                {
+                  "id": "docs",
+                  "canonical_url": "https://go.example/docs",
+                  "redirect_url": "https://docs.example/current?fixed=1",
+                  "status_code": 308,
+                  "response_headers": {"Cache-Control": "public, max-age=300"}
+                },
+                {
+                  "id": "temporary",
+                  "canonical_url": "https://go.example/temporary",
+                  "redirect_url": "https://example.com/",
+                  "status_code": 302,
+                  "response_headers": {}
+                }
+              ]
+            }"#,
+        )
+        .unwrap(),
+    )
+}
+
+fn state(source: Arc<dyn RedirectSource>, sink: Arc<dyn RedirectEventSink>) -> AppState {
+    AppState::new(
+        source,
+        sink,
+        ProxyConfig {
+            trusted_proxies: vec!["127.0.0.0/8".parse().unwrap()],
+            record_client_addresses: true,
+        },
+        HeaderCaptureLimits {
+            value_bytes: 32,
+            total_bytes: 64,
+        },
+    )
+}
+
+fn request(method: Method, target: &str) -> Request<Body> {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(target)
+        .header("host", "internal:8080")
+        .header("forwarded", "for=203.0.113.8;proto=https;host=go.example")
+        .header("user-agent", "integration-test")
+        .header("accept", "text/html")
+        .header("authorization", "secret")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(
+        "127.0.0.1:54321".parse::<std::net::SocketAddr>().unwrap(),
+    ));
+    request
+}
+
+#[tokio::test]
+async fn redirects_and_emits_a_sanitized_event() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(state(source(), sink.clone()));
+    let response = app
+        .oneshot(request(Method::GET, "/docs?source=home&source=nav"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        response.headers()[header::LOCATION],
+        "https://docs.example/current?fixed=1&source=home&source=nav"
+    );
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "public, max-age=300"
+    );
+
+    let events = sink.events.lock().await;
+    let event = &events[0];
+    assert_eq!(event.redirect_id.as_ref().unwrap().as_str(), "docs");
+    assert_eq!(event.client.address.as_deref(), Some("203.0.113.8"));
+    assert_eq!(event.request.scheme, "https");
+    assert_eq!(event.request.host, "go.example");
+    assert_eq!(
+        event.request.query.as_deref(),
+        Some("source=home&source=nav")
+    );
+    assert!(event.request.headers.contains_key("accept"));
+    assert!(!event.request.headers.contains_key("authorization"));
+    assert_eq!(event.response.status_code, 308);
+    assert!(event.duration_ms >= 0.0);
+}
+
+#[tokio::test]
+async fn head_not_found_and_unsupported_methods_emit_expected_events() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(state(source(), sink.clone()));
+
+    let head = app
+        .clone()
+        .oneshot(request(Method::HEAD, "/temporary"))
+        .await
+        .unwrap();
+    assert_eq!(head.status(), StatusCode::FOUND);
+    assert_eq!(to_bytes(head.into_body(), 1024).await.unwrap().len(), 0);
+
+    let missing = app
+        .clone()
+        .oneshot(request(Method::GET, "/missing"))
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    let post = app.oneshot(request(Method::POST, "/docs")).await.unwrap();
+    assert_eq!(post.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(post.headers()[header::ALLOW], "GET, HEAD");
+
+    let events = sink.events.lock().await;
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0].outcome, compactor::RedirectOutcome::Redirected);
+    assert_eq!(events[1].outcome, compactor::RedirectOutcome::NotFound);
+    assert_eq!(
+        events[2].outcome,
+        compactor::RedirectOutcome::InvalidRequest
+    );
+}
+
+#[tokio::test]
+async fn source_errors_become_500_events() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(state(Arc::new(FailingSource), sink.clone()));
+    let response = app
+        .oneshot(request(Method::GET, "/anything"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let events = sink.events.lock().await;
+    assert_eq!(events[0].outcome, compactor::RedirectOutcome::SourceError);
+}
+
+#[tokio::test]
+async fn sink_failure_does_not_replace_redirect() {
+    let app = router(state(source(), Arc::new(FailingSink)));
+    let response = app.oneshot(request(Method::GET, "/docs")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+}
+
+#[tokio::test]
+async fn health_is_reserved_and_event_free() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(state(source(), sink.clone()));
+    let response = app.oneshot(request(Method::GET, "/healthz")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(sink.events.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn supports_every_redirect_status() {
+    for status in [301, 302, 303, 307, 308] {
+        let json = format!(
+            r#"{{"redirects":[{{
+                "id":"status-{status}",
+                "canonical_url":"http://status.example/test",
+                "redirect_url":"https://destination.example/",
+                "status_code":{status},
+                "response_headers":{{}}
+            }}]}}"#
+        );
+        let source = Arc::new(JsonRedirectSource::from_json(&json).unwrap());
+        let sink = Arc::new(RecordingSink::default());
+        let app = router(AppState::new(
+            source,
+            sink,
+            ProxyConfig {
+                trusted_proxies: Vec::new(),
+                record_client_addresses: false,
+            },
+            HeaderCaptureLimits {
+                value_bytes: 32,
+                total_bytes: 64,
+            },
+        ));
+        let mut direct = Request::builder()
+            .uri("/test")
+            .header("host", "status.example")
+            .body(Body::empty())
+            .unwrap();
+        direct.extensions_mut().insert(ConnectInfo(
+            "192.0.2.4:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let response = app.oneshot(direct).await.unwrap();
+        assert_eq!(response.status().as_u16(), status);
+    }
+}
+
+#[tokio::test]
+async fn malformed_trusted_forwarding_is_invalid_and_address_can_be_omitted() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(AppState::new(
+        source(),
+        sink.clone(),
+        ProxyConfig {
+            trusted_proxies: vec!["127.0.0.0/8".parse().unwrap()],
+            record_client_addresses: false,
+        },
+        HeaderCaptureLimits {
+            value_bytes: 32,
+            total_bytes: 64,
+        },
+    ));
+    let mut malformed = request(Method::GET, "/docs");
+    malformed.headers_mut().insert(
+        "forwarded",
+        "for=not-an-ip;proto=https;host=go.example".parse().unwrap(),
+    );
+    let response = app.oneshot(malformed).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let events = sink.events.lock().await;
+    assert_eq!(
+        events[0].outcome,
+        compactor::RedirectOutcome::InvalidRequest
+    );
+    assert!(events[0].client.address.is_none());
+    assert_ne!(
+        events[0].event_id.to_string(),
+        events[0]
+            .redirect_id
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    );
+    let serialized = serde_json::to_value(&events[0]).unwrap();
+    assert!(serialized["occurred_at"].as_str().unwrap().ends_with('Z'));
+}
