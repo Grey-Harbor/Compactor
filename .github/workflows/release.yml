@@ -27,6 +27,12 @@ jobs:
       packages: write
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: Validate release tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -36,8 +42,31 @@ jobs:
             exit 1
           fi
 
-      - name: Check out repository
-        uses: actions/checkout@v6
+          if [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != "tag" ]]; then
+            echo "Release tags must be annotated" >&2
+            exit 1
+          fi
+
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [[ "v$cargo_version" != "$RELEASE_TAG" ]]; then
+            echo "Cargo.toml version does not match $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          release_heading="$(sed -n '1s/^# Compactor //p' RELEASE.md)"
+          if [[ "$release_heading" != "$RELEASE_TAG" ]]; then
+            echo "RELEASE.md heading does not match $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          tag_description="$(git for-each-ref \
+            --format='%(contents)' \
+            "refs/tags/$RELEASE_TAG")"
+          release_description="$(cat RELEASE.md)"
+          if [[ "$tag_description" != "$release_description" ]]; then
+            echo "Tag description must match RELEASE.md" >&2
+            exit 1
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

@@ -56,7 +56,11 @@ fn parse_bool(name: &str, default: &str) -> Result<bool, String> {
 }
 
 fn parse_nonzero_usize(name: &str, default: &str) -> Result<usize, String> {
-    let parsed = value(name, default)
+    parse_nonzero_usize_value(name, &value(name, default))
+}
+
+fn parse_nonzero_usize_value(name: &str, value: &str) -> Result<usize, String> {
+    let parsed = value
         .parse::<usize>()
         .map_err(|_| format!("{name} must be a positive integer"))?;
     if parsed == 0 {
@@ -88,5 +92,14 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert!(parsed[0].contains(&"127.0.0.1".parse::<IpAddr>().unwrap()));
         assert!(parsed[1].contains(&"10.4.3.2".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn malformed_proxy_entries_and_nonpositive_limits_are_rejected() {
+        assert!(parse_trusted_proxies("10.0.0.0/33").is_err());
+        assert!(parse_trusted_proxies("proxy.example").is_err());
+        assert!(parse_nonzero_usize_value("TEST_LIMIT", "0").is_err());
+        assert!(parse_nonzero_usize_value("TEST_LIMIT", "-1").is_err());
+        assert!(parse_nonzero_usize_value("TEST_LIMIT", "many").is_err());
     }
 }

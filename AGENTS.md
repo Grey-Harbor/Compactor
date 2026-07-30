@@ -23,9 +23,10 @@ contributors.
 
 ## Planning
 
-Update `PLAN.md` before significant features or architectural work. Record
-assumptions, affected components, and implementation strategy. Do not begin a
-large undocumented refactor.
+Use the local-only, Git-ignored `PLAN.md` before significant features or
+architectural work. Record assumptions, affected components, and implementation
+strategy there. Do not commit `PLAN.md`, and do not begin a large undocumented
+refactor.
 
 ## Code quality and testing
 
@@ -52,10 +53,31 @@ is restricted to stable semantic version tags through
 `.github/workflows/release.yml`; do not add branch-based publishing or service
 deployment without explicit maintainer authorization.
 
+`RELEASE.md` is the canonical summary and annotated-tag description for the
+current release. Keep its version aligned with `Cargo.toml`, update its summary
+whenever release-facing behavior changes, and create release tags with
+`git tag -a <version> -F RELEASE.md`. Never rewrite a published tag; prepare
+`RELEASE.md` for the next version instead.
+
 ## Git standards
 
-Treat history as an engineering artifact. Do not prefix branch names with
-`codex/` or another agent name. Make one logical change per commit, avoid mixing
+Treat history as an engineering artifact. All updates must be developed on a
+working branch; never make new changes directly on `main`. Start from an up-to-date
+`main`, create a short descriptive branch such as `feat/header-policy`,
+`fix/proxy-chain`, or `docs/deployment`, and do not prefix branch names with
+`codex/` or another agent name.
+
+Use this workflow for every change:
+
+1. Create or switch to the working branch before editing.
+2. Make one logical change per commit and validate it locally.
+3. Push the working branch to `origin`.
+4. Open a pull request targeting `main` with the change summary and verification
+   evidence.
+5. Merge only after required CI and review are complete.
+6. Update local `main` from the merged remote before starting other work.
+
+Do not bypass the pull request by pushing commits directly to `main`. Avoid mixing
 refactors with feature work, and never commit generated output or temporary
 debugging changes unless explicitly required.
 
@@ -68,6 +90,22 @@ Every commit uses Conventional Commits:
 Use imperative mood and keep the first line under 72 characters. Preferred types
 are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, and `perf`.
 Add a `BREAKING CHANGE` footer when applicable.
+
+## Release tags
+
+Create a release tag only after the release pull request is merged and local
+`main` is updated to that exact merged commit. Confirm `Cargo.toml` and
+`RELEASE.md` name the same version, rerun the release checks, then create and push
+the annotated tag:
+
+```sh
+git tag -a <version> -F RELEASE.md
+git push origin <version>
+```
+
+Never tag an unmerged working branch, move or recreate a published tag, or publish
+a release image from a branch. The tag push is the only action that triggers the
+container release workflow.
 
 ## Review mindset
 

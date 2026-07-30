@@ -129,4 +129,18 @@ mod tests {
             .expect("missing parent must fail");
         assert!(error.to_string().contains("could not open event output"));
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn reports_emit_time_io_errors() {
+        let sink = JsonlRedirectEventSink::open("/dev/full").await.unwrap();
+        let error = sink
+            .emit(&event())
+            .await
+            .expect_err("/dev/full must reject flushed writes");
+        assert!(
+            error.to_string().contains("append redirect event")
+                || error.to_string().contains("flush redirect event")
+        );
+    }
 }

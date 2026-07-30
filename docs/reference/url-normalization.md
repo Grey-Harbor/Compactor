@@ -7,7 +7,14 @@ Lookup keys contain scheme, host, effective port, and path.
 - An empty path becomes `/`.
 - Query and fragment never participate in lookup.
 - User information and missing/malformed hosts are rejected.
-- Path case, trailing slashes, and path semantics remain significant.
+- Backslashes are rejected because their interpretation is ambiguous in HTTP URL
+  parsers.
+- Path case, trailing slashes, repeated separators, literal dot segments,
+  percent-encoded dot segments, and percent-escape spelling remain significant.
+
+For example, `/a/../b`, `/b`, `/%2e%2e/b`, `/%7Euser`, and `/~user` are distinct
+lookup paths. Compactor preserves the request-target path instead of applying
+filesystem-style or browser-style path cleanup.
 
 Incoming query text is recorded independently. On a redirect, Compactor preserves
 the destination's configured query, appends the incoming query after it, preserves

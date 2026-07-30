@@ -37,6 +37,7 @@ docker compose up --build
 - [Getting started](docs/tutorials/getting-started.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Architecture](ARCHITECTURE.md)
+- [Current release summary](RELEASE.md)
 - [Deployment with Docker](docs/how-to/deploy-with-docker.md)
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
@@ -45,8 +46,9 @@ Compactor v0.1 requires Rust 1.85 or newer.
 ## Continuous integration
 
 Pull requests, pushes to `main`, and manual workflow runs verify formatting, tests,
-strict Clippy checks, the Compose model, and the production container build. The
-CI workflow does not publish artifacts.
+strict Clippy checks, the Compose model, the production container build, and a
+non-root runtime smoke test covering health, redirects, events, and graceful
+shutdown. The CI workflow does not publish artifacts.
 
 Pushing a stable semantic version tag such as `v0.1.0` runs the complete CI gate,
 then publishes Linux AMD64 and ARM64 images with provenance and SBOM attestations
