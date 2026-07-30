@@ -1,7 +1,12 @@
 /target/
+/site/.next/
+/site/node_modules/
+/site/out/
+/site/tsconfig.tsbuildinfo
 /.idea/
 /.vscode/
 .DS_Store
 *.jsonl
 .env
+/redirects.json
 /PLAN.md

@@ -12,6 +12,11 @@ The reverse proxy owns TLS termination and replacement of client-supplied
 forwarding metadata. Event collectors own rotation, retention, shipping, and
 analysis. Compactor owns none of those concerns.
 
+The project website is a separate static presentation surface. It reads the
+repository's Markdown documentation at build time and publishes generated HTML;
+it does not communicate with a running Compactor service or change the runtime
+boundary.
+
 The v0.1 goals are deterministic multi-host lookup, correct redirect responses,
 bounded privacy-aware events, independently replaceable source and sink adapters,
 and predictable startup and shutdown. Management APIs, runtime source mutation,
@@ -31,6 +36,21 @@ client ── proxy ── HTTP ──► request pipeline ──┼──► HT
 JSON and JSONL are reference adapters, not architectural requirements. The
 application depends on domain contracts, so another source or event destination
 can be assembled without coupling the adapters to each other.
+
+## Website and documentation publishing
+
+The `site/` project is a statically exported Next.js application. Its landing page
+explains the product boundary, while its Fumadocs-based documentation routes render
+the Markdown files under `docs/`. The Markdown remains canonical: the website
+build discovers it, derives routes from its paths, rewrites internal Markdown links
+to generated routes, and links files outside `docs/` back to GitHub.
+
+The site has no runtime API, database, or state. `next build` produces the complete
+`site/out` artifact, including canonical metadata, sitemap, robots policy, social
+preview, and custom-domain file. CI type-checks and builds this project without
+publishing it. A separate GitHub Pages workflow publishes the same static artifact
+only after changes reach `main`, keeping deployment out of the service and
+container release workflows.
 
 ## Components and dependency direction
 

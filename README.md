@@ -33,8 +33,10 @@ docker compose up --build
 
 ## Documentation
 
+- [Compactor website](https://compactor.greyharborsoftware.com)
 - [Documentation index](docs/README.md)
 - [Getting started](docs/tutorials/getting-started.md)
+- [Building from source](docs/tutorials/building-from-source.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Architecture](ARCHITECTURE.md)
 - [Current release summary](RELEASE.md)
@@ -42,6 +44,12 @@ docker compose up --build
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
 Compactor v0.1 requires Rust 1.85 or newer.
+
+The website publishes this repository's Markdown documentation through Fumadocs.
+The files under `docs/` remain the source of truth.
+
+From the repository root, use `npm run site:check`, `npm run site:build`, and
+`npm run site:preview` to verify, export, and preview the website.
 
 ## Continuous integration
 
