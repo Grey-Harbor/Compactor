@@ -9,9 +9,11 @@ adapter-driven URL redirection service.
   source contract.
 - Ships with a startup-validated JSON source and append-only JSONL event sink.
 - Supports `301`, `302`, `303`, `307`, and `308` redirects, query preservation,
-  trusted proxies, bounded event capture, and graceful shutdown.
+  trusted proxies, path-preserving canonical identity, bounded event capture, and
+  graceful shutdown.
 - Includes a non-root production container for Linux AMD64 and ARM64.
-- Provides focused contract, adapter, HTTP integration, and container tests.
+- Provides focused contract and adapter tests, full JSON-to-HTTP-to-JSONL
+  integration coverage, and a non-root container runtime smoke test.
 
 ## Container
 

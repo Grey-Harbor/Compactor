@@ -8,6 +8,7 @@ export COMPACTOR_EVENTS_FILE=/var/lib/compactor/events.jsonl
 ```
 
 Compactor creates the file, opens it in append mode, and flushes after every event.
-It does not create parent directories, rotate files, or manage retention. Use an
-external collector or rotation workflow. See the
+It does not `fsync` each event, create parent directories, repair partial records,
+rotate files, or manage retention. Use an external collector or rotation workflow.
+See the
 [event format](../reference/jsonl-event-format.md) for the wire contract.
