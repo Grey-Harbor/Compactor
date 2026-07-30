@@ -47,8 +47,10 @@ unless a maintainer explicitly requests them.
 ## Continuous integration
 
 Keep `.github/workflows/ci.yml` aligned with the local verification commands and
-the minimum supported Rust version. CI must remain read-only and deployment-free
-until maintainers explicitly define a release destination and authorize CD.
+the minimum supported Rust version. CI must remain read-only. Container publishing
+is restricted to stable semantic version tags through
+`.github/workflows/release.yml`; do not add branch-based publishing or service
+deployment without explicit maintainer authorization.
 
 ## Git standards
 

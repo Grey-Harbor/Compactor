@@ -46,8 +46,18 @@ Compactor v0.1 requires Rust 1.85 or newer.
 
 Pull requests, pushes to `main`, and manual workflow runs verify formatting, tests,
 strict Clippy checks, the Compose model, and the production container build. The
-workflow does not publish artifacts or deploy Compactor; delivery automation will
-be introduced separately when the public release destination is defined.
+CI workflow does not publish artifacts.
+
+Pushing a stable semantic version tag such as `v0.1.0` runs the complete CI gate,
+then publishes Linux AMD64 and ARM64 images with provenance and SBOM attestations
+to GitHub Container Registry:
+
+```sh
+docker pull ghcr.io/grey-harbor/compactor:0.1.0
+```
+
+Release images are also tagged with their minor, major, and `latest` aliases. No
+workflow deploys a running Compactor service.
 
 ## License
 
