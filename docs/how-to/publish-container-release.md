@@ -10,9 +10,13 @@ is the canonical release summary and annotated-tag description. Before releasing
 Create the annotated tag directly from the release summary, then push it:
 
 ```sh
-git tag -a v0.1.0 -F RELEASE.md
+git tag -a --cleanup=verbatim v0.1.0 -F RELEASE.md
 git push origin v0.1.0
 ```
+
+The `--cleanup=verbatim` option preserves Markdown headings and blank lines.
+Without it, Git treats heading lines beginning with `#` as comments, causing the
+tag description validation to fail.
 
 The release workflow runs the complete CI gate before publishing Linux AMD64 and
 ARM64 images to GitHub Container Registry. For `v0.1.0`, it publishes:

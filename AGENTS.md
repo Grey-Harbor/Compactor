@@ -56,8 +56,9 @@ deployment without explicit maintainer authorization.
 `RELEASE.md` is the canonical summary and annotated-tag description for the
 current release. Keep its version aligned with `Cargo.toml`, update its summary
 whenever release-facing behavior changes, and create release tags with
-`git tag -a <version> -F RELEASE.md`. Never rewrite a published tag; prepare
-`RELEASE.md` for the next version instead.
+`git tag -a --cleanup=verbatim <version> -F RELEASE.md`. Verbatim cleanup is
+required so Git preserves Markdown headings in the tag description. Never rewrite
+a published tag; prepare `RELEASE.md` for the next version instead.
 
 ## Git standards
 
@@ -99,7 +100,7 @@ Create a release tag only after the release pull request is merged and local
 the annotated tag:
 
 ```sh
-git tag -a <version> -F RELEASE.md
+git tag -a --cleanup=verbatim <version> -F RELEASE.md
 git push origin <version>
 ```
 
