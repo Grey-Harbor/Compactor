@@ -1,6 +1,6 @@
-# Compactor
-
 ![Compactor — Make the redirect. Keep the machinery small.](site/public/brand/social-card.png)
+
+# Compactor
 
 [![CI](https://github.com/Grey-Harbor/Compactor/actions/workflows/ci.yml/badge.svg)](https://github.com/Grey-Harbor/Compactor/actions/workflows/ci.yml)
 
