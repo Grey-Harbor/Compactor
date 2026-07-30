@@ -104,8 +104,8 @@ npm --prefix site ci
 Then run the same site checks as CI:
 
 ```bash
-npm --prefix site run check
-npm --prefix site run build
+npm run site:check
+npm run site:build
 ```
 
 The build produces `site/out/`, including the marketing page, Fumadocs-rendered
@@ -116,7 +116,7 @@ Diátaxis documentation, crawler files, brand assets, and custom-domain file.
 Preview the generated export rather than the Next.js development server:
 
 ```bash
-npm --prefix site run preview
+npm run site:preview
 ```
 
 Open `http://127.0.0.1:3000` and check the homepage, `/docs/`,

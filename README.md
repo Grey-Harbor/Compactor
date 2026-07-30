@@ -48,6 +48,9 @@ Compactor v0.1 requires Rust 1.85 or newer.
 The website publishes this repository's Markdown documentation through Fumadocs.
 The files under `docs/` remain the source of truth.
 
+From the repository root, use `npm run site:check`, `npm run site:build`, and
+`npm run site:preview` to verify, export, and preview the website.
+
 ## Continuous integration
 
 Pull requests, pushes to `main`, and manual workflow runs verify formatting, tests,

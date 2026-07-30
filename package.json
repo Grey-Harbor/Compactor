@@ -1,0 +1,14 @@
+{
+  "name": "@greyharbor/compactor",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "site:check": "npm --prefix site run check",
+    "site:build": "npm --prefix site run build",
+    "site:preview": "npm --prefix site run preview"
+  }
+}
