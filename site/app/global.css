@@ -188,16 +188,32 @@ a:focus-visible,
 }
 
 .repo-link {
-  padding: 0.65rem 0.85rem;
-  border: 1px solid var(--line);
+  display: inline-flex;
+  width: 2.4rem;
+  height: 2.4rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
 }
 
+.repo-link svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
 .topnav a:hover,
-.topnav a:focus-visible,
+.topnav a:focus-visible {
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
 .repo-link:hover,
 .repo-link:focus-visible {
   color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
   transform: translateY(-1px);
 }
 
