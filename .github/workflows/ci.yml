@@ -46,3 +46,47 @@ jobs:
 
       - name: Build production image
         run: docker build --tag compactor:ci .
+
+      - name: Smoke test production image
+        run: |
+          set -euo pipefail
+          events_dir="$RUNNER_TEMP/compactor-events"
+          mkdir -p "$events_dir"
+          chmod 0777 "$events_dir"
+
+          docker run --detach \
+            --name compactor-ci \
+            --publish 18080:8080 \
+            --mount "type=bind,source=$PWD/examples/redirects.json,target=/etc/compactor/redirects.json,readonly" \
+            --mount "type=bind,source=$events_dir,target=/var/lib/compactor" \
+            compactor:ci
+          cleanup() {
+            docker rm --force compactor-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          test "$(docker inspect --format '{{.Config.User}}' compactor-ci)" = "10001:10001"
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" = 20 ]]; then
+              docker logs compactor-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          docker exec compactor-ci \
+            curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null
+
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'Host: localhost:8080' \
+            'http://127.0.0.1:18080/project?from=ci')"
+          test "$status" = "302"
+          grep --quiet '"outcome":"redirected"' "$events_dir/events.jsonl"
+
+          docker stop --timeout 10 compactor-ci
+          docker logs compactor-ci >"$RUNNER_TEMP/compactor.log" 2>&1
+          grep --quiet 'Compactor stopped' "$RUNNER_TEMP/compactor.log"
+          docker rm compactor-ci
+          trap - EXIT
