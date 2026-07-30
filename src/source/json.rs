@@ -196,5 +196,43 @@ mod tests {
             r#""response_headers":{"bad header":"value"}"#,
         );
         assert!(JsonRedirectSource::from_json(&document(&malformed_header)).is_err());
+
+        let malformed_value = valid("one", "https://example.com/").replace(
+            r#""response_headers":{}"#,
+            r#""response_headers":{"X-Test":"line\u000Abreak"}"#,
+        );
+        assert!(JsonRedirectSource::from_json(&document(&malformed_value)).is_err());
+    }
+
+    #[test]
+    fn preserves_distinct_dot_segments_and_percent_encodings() {
+        let source = JsonRedirectSource::from_json(&document(&format!(
+            "{},{},{}",
+            valid("literal-dot", "https://example.com/a/../b"),
+            valid("encoded-dot", "https://example.com/%2e%2e/b"),
+            valid("tilde", "https://example.com/%7Euser")
+        )))
+        .unwrap();
+        for (url, id) in [
+            ("https://example.com/a/../b", "literal-dot"),
+            ("https://example.com/%2e%2e/b", "encoded-dot"),
+            ("https://example.com/%7Euser", "tilde"),
+        ] {
+            assert_eq!(
+                source
+                    .resolve(&CanonicalUrl::parse(url).unwrap())
+                    .unwrap()
+                    .unwrap()
+                    .id
+                    .as_str(),
+                id
+            );
+        }
+        assert!(
+            source
+                .resolve(&CanonicalUrl::parse("https://example.com/~user").unwrap())
+                .unwrap()
+                .is_none()
+        );
     }
 }

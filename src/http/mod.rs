@@ -15,8 +15,7 @@ use axum::{
     Router,
     body::Body,
     extract::{ConnectInfo, State},
-    response::IntoResponse,
-    routing::get,
+    routing::any,
 };
 use chrono::Utc;
 use ipnet::IpNet;
@@ -74,22 +73,40 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/healthz", get(health))
+        .route("/healthz", any(handle_healthz))
         .fallback(handle_request)
         .with_state(state)
 }
 
-async fn health(method: Method) -> impl IntoResponse {
-    if method == Method::HEAD {
-        (StatusCode::OK, "")
-    } else {
-        (StatusCode::OK, "ok\n")
+async fn handle_healthz(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request<Body>,
+) -> Response<Body> {
+    match *request.method() {
+        Method::GET => Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from("ok\n"))
+            .expect("static health response is valid"),
+        Method::HEAD => Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::empty())
+            .expect("static health response is valid"),
+        _ => process_request(state, peer, request).await,
     }
 }
 
 async fn handle_request(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request<Body>,
+) -> Response<Body> {
+    process_request(state, peer, request).await
+}
+
+async fn process_request(
+    state: AppState,
+    peer: SocketAddr,
     request: Request<Body>,
 ) -> Response<Body> {
     let started = Instant::now();
@@ -316,19 +333,21 @@ fn resolve_request_metadata(
     }
 
     let forwarded = parse_forwarded(headers)?;
+    let fallback_scheme = comma_header_first(headers, "x-forwarded-proto")?;
     let scheme = forwarded
         .as_ref()
         .and_then(|value| value.scheme.clone())
-        .or_else(|| comma_header_first(headers, "x-forwarded-proto"))
+        .or(fallback_scheme)
         .unwrap_or_else(|| direct_scheme.to_owned())
         .to_ascii_lowercase();
     if !matches!(scheme.as_str(), "http" | "https") {
         return Err(format!("forwarded scheme {scheme:?} is not http or https"));
     }
+    let fallback_host = comma_header_first(headers, "x-forwarded-host")?;
     let host = forwarded
         .as_ref()
         .and_then(|value| value.host.clone())
-        .or_else(|| comma_header_first(headers, "x-forwarded-host"))
+        .or(fallback_host)
         .unwrap_or_else(|| direct_host.to_owned());
     Authority::from_str(&host).map_err(|error| format!("invalid forwarded host: {error}"))?;
 
@@ -371,13 +390,16 @@ fn parse_forwarded(headers: &HeaderMap) -> Result<Option<ForwardedValues>, Strin
     let value = value
         .to_str()
         .map_err(|_| "Forwarded header is not valid text".to_owned())?;
+    if value.trim().is_empty() {
+        return Err("Forwarded header must not be empty".into());
+    }
     let mut parsed = ForwardedValues::default();
     for element in value.split(',') {
         for parameter in element.split(';') {
             let Some((name, raw_value)) = parameter.trim().split_once('=') else {
                 return Err("malformed Forwarded parameter".into());
             };
-            let value = raw_value.trim().trim_matches('"');
+            let value = parse_forwarded_value(raw_value)?;
             match name.trim().to_ascii_lowercase().as_str() {
                 "for" => parsed.addresses.push(parse_forwarded_ip(value)?),
                 "proto" if parsed.scheme.is_none() => parsed.scheme = Some(value.to_owned()),
@@ -387,6 +409,27 @@ fn parse_forwarded(headers: &HeaderMap) -> Result<Option<ForwardedValues>, Strin
         }
     }
     Ok(Some(parsed))
+}
+
+fn parse_forwarded_value(raw_value: &str) -> Result<&str, String> {
+    let value = raw_value.trim();
+    let starts_quote = value.starts_with('"');
+    let ends_quote = value.ends_with('"');
+    if starts_quote != ends_quote || (!starts_quote && value.contains('"')) {
+        return Err("malformed quoted Forwarded value".into());
+    }
+    if starts_quote && value.len() < 2 {
+        return Err("malformed quoted Forwarded value".into());
+    }
+    let value = if starts_quote {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    };
+    if value.is_empty() || value.contains(['"', '\\']) {
+        return Err("unsupported quoted Forwarded value".into());
+    }
+    Ok(value)
 }
 
 fn parse_x_forwarded_for(headers: &HeaderMap) -> Result<Vec<IpAddr>, String> {
@@ -420,12 +463,22 @@ fn parse_forwarded_ip(value: &str) -> Result<IpAddr, String> {
     Err(format!("invalid forwarded client address {value:?}"))
 }
 
-fn comma_header_first(headers: &HeaderMap, name: &'static str) -> Option<String> {
-    header_text(headers, name)
-        .and_then(|value| value.split(',').next())
+fn comma_header_first(headers: &HeaderMap, name: &'static str) -> Result<Option<String>, String> {
+    let Some(value) = headers.get(name) else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| format!("{name} header is not valid text"))?;
+    let value = value
+        .split(',')
+        .next()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
+        .filter(|value| !value.is_empty());
+    match value {
+        Some(value) => Ok(Some(value.to_owned())),
+        None => Err(format!("{name} header must not be empty")),
+    }
 }
 
 fn capture_headers(headers: &HeaderMap, limits: HeaderCaptureLimits) -> BTreeMap<String, String> {
@@ -504,6 +557,24 @@ mod tests {
     }
 
     #[test]
+    fn captured_headers_truncate_on_utf8_boundaries_and_skip_invalid_text() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "accept",
+            HeaderValue::from_bytes(&[0xff]).expect("opaque header bytes are valid"),
+        );
+        let captured = capture_headers(
+            &headers,
+            HeaderCaptureLimits {
+                value_bytes: 3,
+                total_bytes: 8,
+            },
+        );
+        assert!(!captured.contains_key("accept"));
+        assert_eq!(truncate_utf8("éclair", 2), "é");
+    }
+
+    #[test]
     fn trusted_proxy_uses_forwarded_values_and_walks_chain() {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -548,5 +619,66 @@ mod tests {
         assert_eq!(resolved.scheme, "http");
         assert_eq!(resolved.host, "direct.example");
         assert_eq!(resolved.client_address, Some(peer.ip()));
+    }
+
+    #[test]
+    fn trusted_proxy_falls_back_to_x_forwarded_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.4, 10.0.0.2"),
+        );
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("HTTPS"));
+        headers.insert(
+            "x-forwarded-host",
+            HeaderValue::from_static("go.example:443"),
+        );
+        let config = ProxyConfig {
+            trusted_proxies: vec!["10.0.0.0/8".parse().unwrap()],
+            record_client_addresses: true,
+        };
+        let resolved = resolve_request_metadata(
+            "http",
+            "internal:8080",
+            &headers,
+            Some("10.0.0.3:5000".parse().unwrap()),
+            &config,
+        )
+        .unwrap();
+        assert_eq!(resolved.scheme, "https");
+        assert_eq!(resolved.host, "go.example:443");
+        assert_eq!(
+            resolved.client_address,
+            Some("203.0.113.4".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn trusted_proxy_rejects_malformed_fallback_and_forwarded_quotes() {
+        let config = ProxyConfig {
+            trusted_proxies: vec!["10.0.0.0/8".parse().unwrap()],
+            record_client_addresses: true,
+        };
+        let peer = Some("10.0.0.3:5000".parse().unwrap());
+
+        let mut invalid_fallback = HeaderMap::new();
+        invalid_fallback.insert(
+            "x-forwarded-host",
+            HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
+        assert!(
+            resolve_request_metadata("http", "internal:8080", &invalid_fallback, peer, &config)
+                .is_err()
+        );
+
+        let mut invalid_forwarded = HeaderMap::new();
+        invalid_forwarded.insert(
+            "forwarded",
+            HeaderValue::from_static("for=\"203.0.113.4;proto=https"),
+        );
+        assert!(
+            resolve_request_metadata("http", "internal:8080", &invalid_forwarded, peer, &config)
+                .is_err()
+        );
     }
 }

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use axum::{
@@ -6,10 +6,12 @@ use axum::{
     extract::ConnectInfo,
 };
 use compactor::{
-    AppState, CanonicalUrl, HeaderCaptureLimits, JsonRedirectSource, ProxyConfig, RedirectEvent,
-    RedirectEventSink, RedirectEventSinkError, RedirectSource, RedirectSourceError, router,
+    AppState, CanonicalUrl, HeaderCaptureLimits, JsonRedirectSource, JsonlRedirectEventSink,
+    ProxyConfig, RedirectEvent, RedirectEventSink, RedirectEventSinkError, RedirectSource,
+    RedirectSourceError, router,
 };
 use http::{Method, Request, StatusCode, header};
+use tempfile::tempdir;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 
@@ -32,6 +34,20 @@ struct FailingSink;
 impl RedirectEventSink for FailingSink {
     async fn emit(&self, _event: &RedirectEvent) -> Result<(), RedirectEventSinkError> {
         Err(RedirectEventSinkError::new("disk full"))
+    }
+}
+
+#[derive(Default)]
+struct DelayedRecordingSink {
+    events: Mutex<Vec<RedirectEvent>>,
+}
+
+#[async_trait]
+impl RedirectEventSink for DelayedRecordingSink {
+    async fn emit(&self, event: &RedirectEvent) -> Result<(), RedirectEventSinkError> {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        self.events.lock().await.push(event.clone());
+        Ok(())
     }
 }
 
@@ -197,9 +213,42 @@ async fn sink_failure_does_not_replace_redirect() {
 async fn health_is_reserved_and_event_free() {
     let sink = Arc::new(RecordingSink::default());
     let app = router(state(source(), sink.clone()));
-    let response = app.oneshot(request(Method::GET, "/healthz")).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    let get_response = app
+        .clone()
+        .oneshot(request(Method::GET, "/healthz"))
+        .await
+        .unwrap();
+    assert_eq!(get_response.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(get_response.into_body(), 1024).await.unwrap(),
+        "ok\n"
+    );
+    let head_response = app
+        .clone()
+        .oneshot(request(Method::HEAD, "/healthz"))
+        .await
+        .unwrap();
+    assert_eq!(head_response.status(), StatusCode::OK);
+    assert!(
+        to_bytes(head_response.into_body(), 1024)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert!(sink.events.lock().await.is_empty());
+
+    let post_response = app
+        .oneshot(request(Method::POST, "/healthz"))
+        .await
+        .unwrap();
+    assert_eq!(post_response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(post_response.headers()[header::ALLOW], "GET, HEAD");
+    let events = sink.events.lock().await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].outcome,
+        compactor::RedirectOutcome::InvalidRequest
+    );
 }
 
 #[tokio::test]
@@ -279,4 +328,157 @@ async fn malformed_trusted_forwarding_is_invalid_and_address_can_be_omitted() {
     );
     let serialized = serde_json::to_value(&events[0]).unwrap();
     assert!(serialized["occurred_at"].as_str().unwrap().ends_with('Z'));
+}
+
+#[tokio::test]
+async fn lookup_uses_the_public_host_and_preserves_path_identity() {
+    let source = Arc::new(
+        JsonRedirectSource::from_json(
+            r#"{"redirects":[
+                {"id":"one","canonical_url":"http://one.example/a/../b","redirect_url":"https://destination.example/one","status_code":302,"response_headers":{}},
+                {"id":"two","canonical_url":"http://two.example/a/../b","redirect_url":"https://destination.example/two","status_code":302,"response_headers":{}},
+                {"id":"encoded","canonical_url":"http://one.example/%2e%2e/b","redirect_url":"https://destination.example/encoded","status_code":302,"response_headers":{}}
+            ]}"#,
+        )
+        .unwrap(),
+    );
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(AppState::new(
+        source,
+        sink,
+        ProxyConfig {
+            trusted_proxies: Vec::new(),
+            record_client_addresses: true,
+        },
+        HeaderCaptureLimits {
+            value_bytes: 32,
+            total_bytes: 64,
+        },
+    ));
+
+    for (host, path, location) in [
+        ("one.example", "/a/../b", "https://destination.example/one"),
+        ("two.example", "/a/../b", "https://destination.example/two"),
+        (
+            "one.example",
+            "/%2e%2e/b",
+            "https://destination.example/encoded",
+        ),
+    ] {
+        let mut direct = Request::builder()
+            .uri(path)
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        direct.extensions_mut().insert(ConnectInfo(
+            "192.0.2.4:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let response = app.clone().oneshot(direct).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(response.headers()[header::LOCATION], location);
+    }
+}
+
+#[tokio::test]
+async fn missing_host_is_rejected_before_source_lookup() {
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(state(source(), sink.clone()));
+    let mut missing_host = Request::builder().uri("/docs").body(Body::empty()).unwrap();
+    missing_host.extensions_mut().insert(ConnectInfo(
+        "192.0.2.4:1234".parse::<std::net::SocketAddr>().unwrap(),
+    ));
+    let response = app.oneshot(missing_host).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        sink.events.lock().await[0].outcome,
+        compactor::RedirectOutcome::InvalidRequest
+    );
+}
+
+#[tokio::test]
+async fn event_duration_excludes_sink_latency() {
+    let sink = Arc::new(DelayedRecordingSink::default());
+    let app = router(state(source(), sink.clone()));
+    let response = app.oneshot(request(Method::GET, "/docs")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    let events = sink.events.lock().await;
+    assert!(
+        events[0].duration_ms < 100.0,
+        "duration included sink delay: {}ms",
+        events[0].duration_ms
+    );
+}
+
+#[tokio::test]
+async fn json_source_http_service_and_jsonl_sink_work_together() {
+    let directory = tempdir().unwrap();
+    let redirects_path = directory.path().join("redirects.json");
+    let events_path = directory.path().join("events.jsonl");
+    std::fs::write(
+        &redirects_path,
+        r#"{"redirects":[{
+            "id":"docs",
+            "canonical_url":"https://go.example/docs",
+            "redirect_url":"https://docs.example/current",
+            "status_code":308,
+            "response_headers":{}
+        }]}"#,
+    )
+    .unwrap();
+    let source: Arc<dyn RedirectSource> =
+        Arc::new(JsonRedirectSource::load(&redirects_path).unwrap());
+    let sink = Arc::new(JsonlRedirectEventSink::open(&events_path).await.unwrap());
+    let app = router(state(source, sink.clone()));
+
+    assert_eq!(
+        app.clone()
+            .oneshot(request(Method::GET, "/docs"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::PERMANENT_REDIRECT
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request(Method::GET, "/missing"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let mut invalid = request(Method::GET, "/docs");
+    invalid.headers_mut().insert(
+        "forwarded",
+        "for=invalid;proto=https;host=go.example".parse().unwrap(),
+    );
+    assert_eq!(
+        app.oneshot(invalid).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let failing_app = router(state(Arc::new(FailingSource), sink));
+    assert_eq!(
+        failing_app
+            .oneshot(request(Method::GET, "/docs"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+
+    let contents = tokio::fs::read_to_string(events_path).await.unwrap();
+    let events: Vec<RedirectEvent> = contents
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 4);
+    assert_eq!(
+        events.iter().map(|event| event.outcome).collect::<Vec<_>>(),
+        [
+            compactor::RedirectOutcome::Redirected,
+            compactor::RedirectOutcome::NotFound,
+            compactor::RedirectOutcome::InvalidRequest,
+            compactor::RedirectOutcome::SourceError,
+        ]
+    );
 }
