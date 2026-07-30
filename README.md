@@ -37,6 +37,7 @@ docker compose up --build
 - [Getting started](docs/tutorials/getting-started.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Architecture](ARCHITECTURE.md)
+- [Current release summary](RELEASE.md)
 - [Deployment with Docker](docs/how-to/deploy-with-docker.md)
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 

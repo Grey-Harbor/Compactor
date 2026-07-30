@@ -52,6 +52,12 @@ is restricted to stable semantic version tags through
 `.github/workflows/release.yml`; do not add branch-based publishing or service
 deployment without explicit maintainer authorization.
 
+`RELEASE.md` is the canonical summary and annotated-tag description for the
+current release. Keep its version aligned with `Cargo.toml`, update its summary
+whenever release-facing behavior changes, and create release tags with
+`git tag -a <version> -F RELEASE.md`. Never rewrite a published tag; prepare
+`RELEASE.md` for the next version instead.
+
 ## Git standards
 
 Treat history as an engineering artifact. Do not prefix branch names with
