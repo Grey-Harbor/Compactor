@@ -44,6 +44,12 @@ package metadata, and any documentation that discusses project licensing aligned
 with Apache 2.0. Do not add license or copyright headers to individual source files
 unless a maintainer explicitly requests them.
 
+## Continuous integration
+
+Keep `.github/workflows/ci.yml` aligned with the local verification commands and
+the minimum supported Rust version. CI must remain read-only and deployment-free
+until maintainers explicitly define a release destination and authorize CD.
+
 ## Git standards
 
 Treat history as an engineering artifact. Do not prefix branch names with

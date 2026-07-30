@@ -1,5 +1,7 @@
 # Compactor
 
+[![CI](https://github.com/Grey-Harbor/Compactor/actions/workflows/ci.yml/badge.svg)](https://github.com/Grey-Harbor/Compactor/actions/workflows/ci.yml)
+
 **Make the redirect. Keep the machinery small.**
 
 Compactor is a lightweight, adapter-driven URL redirection service. Redirect
@@ -39,6 +41,13 @@ docker compose up --build
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
 Compactor v0.1 requires Rust 1.85 or newer.
+
+## Continuous integration
+
+Pull requests, pushes to `main`, and manual workflow runs verify formatting, tests,
+strict Clippy checks, the Compose model, and the production container build. The
+workflow does not publish artifacts or deploy Compactor; delivery automation will
+be introduced separately when the public release destination is defined.
 
 ## License
 
