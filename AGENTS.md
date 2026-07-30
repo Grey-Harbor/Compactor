@@ -37,6 +37,13 @@ large undocumented refactor.
 - Update tests, documentation, and architecture together when their contract
   changes.
 
+## Licensing
+
+Compactor is licensed under the Apache License, Version 2.0. Keep `LICENSE`,
+package metadata, and any documentation that discusses project licensing aligned
+with Apache 2.0. Do not add license or copyright headers to individual source files
+unless a maintainer explicitly requests them.
+
 ## Git standards
 
 Treat history as an engineering artifact. Do not prefix branch names with

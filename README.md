@@ -39,3 +39,9 @@ docker compose up --build
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
 Compactor v0.1 requires Rust 1.85 or newer.
+
+## License
+
+Compactor is licensed under the
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+See [LICENSE](LICENSE) for the complete terms.
