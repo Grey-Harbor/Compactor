@@ -23,9 +23,10 @@ contributors.
 
 ## Planning
 
-Update `PLAN.md` before significant features or architectural work. Record
-assumptions, affected components, and implementation strategy. Do not begin a
-large undocumented refactor.
+Use the local-only, Git-ignored `PLAN.md` before significant features or
+architectural work. Record assumptions, affected components, and implementation
+strategy there. Do not commit `PLAN.md`, and do not begin a large undocumented
+refactor.
 
 ## Code quality and testing
 
