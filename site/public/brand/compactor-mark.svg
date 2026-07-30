@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <title>Compactor</title>
+  <defs>
+    <linearGradient id="signal" x1="48" y1="48" x2="81" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e3a35f" />
+      <stop offset="1" stop-color="#ef7e4a" />
+    </linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="27" fill="#0b222a" />
+  <rect x="1" y="1" width="94" height="94" rx="26" stroke="#86c3ce" stroke-opacity=".18" stroke-width="2" />
+  <path d="M19 27h15l19 21" stroke="#86c3ce" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M19 69h15l19-21" stroke="#86c3ce" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M51 48h28" stroke="url(#signal)" stroke-width="7" stroke-linecap="round" />
+  <path d="m70 38 11 10-11 10" stroke="#ef7e4a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

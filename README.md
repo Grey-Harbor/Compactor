@@ -36,6 +36,7 @@ docker compose up --build
 - [Compactor website](https://compactor.greyharborsoftware.com)
 - [Documentation index](docs/README.md)
 - [Getting started](docs/tutorials/getting-started.md)
+- [Building from source](docs/tutorials/building-from-source.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Architecture](ARCHITECTURE.md)
 - [Current release summary](RELEASE.md)

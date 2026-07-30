@@ -122,60 +122,16 @@ a:focus-visible,
 }
 
 .brand-mark {
-  position: relative;
   width: 3.35rem;
   height: 3.35rem;
   flex: 0 0 auto;
-  overflow: hidden;
-  background:
-    linear-gradient(145deg, rgba(134, 195, 206, 0.12), rgba(239, 126, 74, 0.08)),
-    #0b222a;
-  border: 1px solid rgba(134, 195, 206, 0.18);
-  border-radius: 1rem;
-}
-
-.route {
-  position: absolute;
   display: block;
-  height: 0.22rem;
-  border-radius: 999px;
 }
 
-.route-one,
-.route-two {
-  left: 0.72rem;
-  width: 1.2rem;
-  background: var(--accent);
-  transform-origin: right center;
-}
-
-.route-one {
-  top: 1.12rem;
-  transform: rotate(24deg);
-}
-
-.route-two {
-  bottom: 1.12rem;
-  transform: rotate(-24deg);
-}
-
-.route-out {
-  top: 1.56rem;
-  right: 0.63rem;
-  width: 1.32rem;
-  background: linear-gradient(90deg, var(--accent-strong), var(--signal));
-}
-
-.route-out::after {
-  position: absolute;
-  top: 50%;
-  right: -0.05rem;
-  width: 0.58rem;
-  height: 0.58rem;
-  content: '';
-  border-top: 0.2rem solid var(--signal);
-  border-right: 0.2rem solid var(--signal);
-  transform: translateY(-50%) rotate(45deg);
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand-copy {

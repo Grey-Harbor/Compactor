@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   },
   description: siteDescription,
   keywords: [...siteKeywords],
+  icons: {
+    icon: '/brand/compactor-mark.svg',
+    shortcut: '/brand/compactor-mark.svg',
+    apple: '/brand/compactor-mark.svg',
+  },
   robots: {
     index: true,
     follow: true,

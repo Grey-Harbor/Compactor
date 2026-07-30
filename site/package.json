@@ -8,7 +8,9 @@
     "site:build": "npm run build",
     "start": "next start",
     "check": "tsc -p tsconfig.json --noEmit",
-    "site:check": "npm run check"
+    "site:check": "npm run check",
+    "preview": "node scripts/preview.mjs",
+    "site:preview": "npm run preview"
   },
   "dependencies": {
     "fumadocs-core": "15.8.5",

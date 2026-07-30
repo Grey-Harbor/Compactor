@@ -13,9 +13,7 @@ export function SiteHeader() {
     <header className="topbar">
       <Link className="brand" href="/" aria-label="Compactor home">
         <span className="brand-mark" aria-hidden="true">
-          <span className="route route-one" />
-          <span className="route route-two" />
-          <span className="route route-out" />
+          <img src="/brand/compactor-mark.svg" alt="" width={54} height={54} />
         </span>
         <span className="brand-copy">
           <span className="brand-name">Compactor</span>
