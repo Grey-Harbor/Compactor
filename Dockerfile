@@ -17,7 +17,9 @@ COPY --from=builder /build/target/release/compactor /usr/local/bin/compactor
 USER 10001:10001
 ENV COMPACTOR_BIND_ADDRESS=0.0.0.0:8080 \
     COMPACTOR_REDIRECTS_FILE=/etc/compactor/redirects.json \
-    COMPACTOR_EVENTS_FILE=/var/lib/compactor/events.jsonl
+    COMPACTOR_EVENTS_FILE=/var/lib/compactor/events.jsonl \
+    COMPACTOR_REDIRECT_CACHE_TTL_SECONDS=300 \
+    COMPACTOR_REDIRECT_CACHE_MAX_ENTRIES=10000
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD ["curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]

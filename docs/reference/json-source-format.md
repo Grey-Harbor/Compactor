@@ -62,8 +62,16 @@ shape.
 ## Header ownership
 
 Compactor owns `Location`, `Content-Length`, `Connection`, `Transfer-Encoding`,
-`Date`, and `Server`; configuration cannot set them. The source loads once at
-startup, and a failed load prevents the listener from accepting traffic.
+`Date`, and `Server`; configuration cannot set them. The source is fully validated
+once at startup, and a failed initial load prevents the listener from accepting
+traffic. The parsed startup document is discarded.
+
+Each later authoritative lookup reopens, parses, and validates the complete file
+before selecting one canonical URL. A malformed unrelated definition therefore
+fails the lookup; Compactor never exposes a valid subset of an invalid document.
+Successful definitions are cached by the runtime, while misses are not. Install
+complete replacements atomically to prevent readers from observing a partial
+write.
 
 JSON is the reference adapter format, not the source architecture. Implementations
 of `RedirectSource` expose the same validated domain definition regardless of

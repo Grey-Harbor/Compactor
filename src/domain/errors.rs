@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 #[error("{message}")]
 pub struct RedirectSourceError {
     message: String,

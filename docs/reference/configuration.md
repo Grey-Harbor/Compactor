@@ -14,6 +14,8 @@ exception, where an empty value means no trusted proxies.
 | `COMPACTOR_RECORD_CLIENT_ADDRESSES` | `true` | Exactly `true` or `false`. When false, `client.address` is always null. |
 | `COMPACTOR_MAX_CAPTURED_HEADER_VALUE_BYTES` | `1024` | Positive integer UTF-8 byte limit applied to each captured value. |
 | `COMPACTOR_MAX_CAPTURED_HEADER_TOTAL_BYTES` | `4096` | Positive integer budget across captured request-header values. |
+| `COMPACTOR_REDIRECT_CACHE_TTL_SECONDS` | `300` | Positive integer freshness lifetime for a successfully resolved redirect. |
+| `COMPACTOR_REDIRECT_CACHE_MAX_ENTRIES` | `10000` | Positive integer maximum number of resident redirect definitions. |
 
 `RUST_LOG` controls structured operational log filtering through
 `tracing-subscriber` and defaults to `info`. For example:
@@ -23,8 +25,12 @@ RUST_LOG=compactor=debug cargo run
 ```
 
 Startup fails before traffic is accepted when a socket address, trusted proxy,
-boolean, or limit is malformed; a limit is zero; the source cannot be read or
-validated; the event file cannot be opened; or the listener cannot bind.
+boolean, TTL, or limit is malformed; a TTL or limit is zero; the source cannot be
+read or validated; the event file cannot be opened; or the listener cannot bind.
 
-Configuration is not reloaded. Restart the process after changing any value or the
-source file.
+Environment configuration is not reloaded. Restart after changing an environment
+value. The source file is different: it is reread on a cold lookup or stale
+refresh, so an atomically installed valid replacement takes effect according to
+the configured cache TTL without a restart. See
+[Configure the JSON redirect source](../how-to/configure-json-source.md) for
+rollout and rollback behavior.

@@ -1,4 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap, VecDeque},
+    num::NonZeroUsize,
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use axum::{
@@ -7,8 +12,9 @@ use axum::{
 };
 use compactor::{
     AppState, CanonicalUrl, HeaderCaptureLimits, JsonRedirectSource, JsonlRedirectEventSink,
-    ProxyConfig, RedirectEvent, RedirectEventSink, RedirectEventSinkError, RedirectSource,
-    RedirectSourceError, router,
+    ProxyConfig, RedirectCachePolicy, RedirectDefinition, RedirectEvent, RedirectEventSink,
+    RedirectEventSinkError, RedirectId, RedirectRuntime, RedirectSource, RedirectSourceError,
+    RedirectStatus, ResponseHeaders, router,
 };
 use http::{Method, Request, StatusCode, header};
 use tempfile::tempdir;
@@ -53,8 +59,9 @@ impl RedirectEventSink for DelayedRecordingSink {
 
 struct FailingSource;
 
+#[async_trait]
 impl RedirectSource for FailingSource {
-    fn resolve(
+    async fn resolve(
         &self,
         _canonical_url: &CanonicalUrl,
     ) -> Result<Option<compactor::RedirectDefinition>, RedirectSourceError> {
@@ -62,35 +69,92 @@ impl RedirectSource for FailingSource {
     }
 }
 
+struct StaticSource {
+    redirects: HashMap<CanonicalUrl, RedirectDefinition>,
+}
+
+struct SequenceSource {
+    responses: Mutex<VecDeque<Result<Option<RedirectDefinition>, RedirectSourceError>>>,
+}
+
+#[async_trait]
+impl RedirectSource for SequenceSource {
+    async fn resolve(
+        &self,
+        _canonical_url: &CanonicalUrl,
+    ) -> Result<Option<RedirectDefinition>, RedirectSourceError> {
+        self.responses
+            .lock()
+            .await
+            .pop_front()
+            .expect("test source has a scripted response")
+    }
+}
+
+#[async_trait]
+impl RedirectSource for StaticSource {
+    async fn resolve(
+        &self,
+        canonical_url: &CanonicalUrl,
+    ) -> Result<Option<RedirectDefinition>, RedirectSourceError> {
+        Ok(self.redirects.get(canonical_url).cloned())
+    }
+}
+
+fn definition(
+    id: &str,
+    canonical_url: &str,
+    redirect_url: &str,
+    status_code: u16,
+    response_headers: BTreeMap<String, String>,
+) -> RedirectDefinition {
+    RedirectDefinition {
+        id: RedirectId::new(id).unwrap(),
+        canonical_url: CanonicalUrl::parse(canonical_url).unwrap(),
+        redirect_url: redirect_url.parse().unwrap(),
+        status_code: RedirectStatus::try_from(status_code).unwrap(),
+        response_headers: ResponseHeaders::try_from_strings(response_headers).unwrap(),
+    }
+}
+
+fn static_source(definitions: Vec<RedirectDefinition>) -> Arc<dyn RedirectSource> {
+    Arc::new(StaticSource {
+        redirects: definitions
+            .into_iter()
+            .map(|definition| (definition.canonical_url.clone(), definition))
+            .collect(),
+    })
+}
+
 fn source() -> Arc<dyn RedirectSource> {
-    Arc::new(
-        JsonRedirectSource::from_json(
-            r#"{
-              "redirects": [
-                {
-                  "id": "docs",
-                  "canonical_url": "https://go.example/docs",
-                  "redirect_url": "https://docs.example/current?fixed=1",
-                  "status_code": 308,
-                  "response_headers": {"Cache-Control": "public, max-age=300"}
-                },
-                {
-                  "id": "temporary",
-                  "canonical_url": "https://go.example/temporary",
-                  "redirect_url": "https://example.com/",
-                  "status_code": 302,
-                  "response_headers": {}
-                }
-              ]
-            }"#,
-        )
-        .unwrap(),
-    )
+    static_source(vec![
+        definition(
+            "docs",
+            "https://go.example/docs",
+            "https://docs.example/current?fixed=1",
+            308,
+            BTreeMap::from([("Cache-Control".to_owned(), "public, max-age=300".to_owned())]),
+        ),
+        definition(
+            "temporary",
+            "https://go.example/temporary",
+            "https://example.com/",
+            302,
+            BTreeMap::new(),
+        ),
+    ])
+}
+
+fn runtime(source: Arc<dyn RedirectSource>) -> Arc<RedirectRuntime> {
+    Arc::new(RedirectRuntime::new(
+        source,
+        RedirectCachePolicy::new(Duration::from_secs(300), NonZeroUsize::new(100).unwrap()),
+    ))
 }
 
 fn state(source: Arc<dyn RedirectSource>, sink: Arc<dyn RedirectEventSink>) -> AppState {
     AppState::new(
-        source,
+        runtime(source),
         sink,
         ProxyConfig {
             trusted_proxies: vec!["127.0.0.0/8".parse().unwrap()],
@@ -202,6 +266,66 @@ async fn source_errors_become_500_events() {
     assert_eq!(events[0].outcome, compactor::RedirectOutcome::SourceError);
 }
 
+#[tokio::test(start_paused = true)]
+async fn stale_refresh_errors_keep_successful_redirect_events() {
+    let source: Arc<dyn RedirectSource> = Arc::new(SequenceSource {
+        responses: Mutex::new(
+            vec![
+                Ok(Some(definition(
+                    "docs",
+                    "https://go.example/docs",
+                    "https://docs.example/current",
+                    308,
+                    BTreeMap::new(),
+                ))),
+                Err(RedirectSourceError::new("source unavailable")),
+            ]
+            .into(),
+        ),
+    });
+    let runtime = Arc::new(RedirectRuntime::new(
+        source,
+        RedirectCachePolicy::new(Duration::from_secs(1), NonZeroUsize::new(10).unwrap()),
+    ));
+    let sink = Arc::new(RecordingSink::default());
+    let app = router(AppState::new(
+        runtime,
+        sink.clone(),
+        ProxyConfig {
+            trusted_proxies: vec!["127.0.0.0/8".parse().unwrap()],
+            record_client_addresses: true,
+        },
+        HeaderCaptureLimits {
+            value_bytes: 32,
+            total_bytes: 64,
+        },
+    ));
+
+    assert_eq!(
+        app.clone()
+            .oneshot(request(Method::GET, "/docs"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::PERMANENT_REDIRECT
+    );
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        app.oneshot(request(Method::GET, "/docs"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::PERMANENT_REDIRECT
+    );
+    let events = sink.events.lock().await;
+    assert_eq!(events.len(), 2);
+    assert!(
+        events
+            .iter()
+            .all(|event| event.outcome == compactor::RedirectOutcome::Redirected)
+    );
+}
+
 #[tokio::test]
 async fn sink_failure_does_not_replace_redirect() {
     let app = router(state(source(), Arc::new(FailingSink)));
@@ -254,19 +378,16 @@ async fn health_is_reserved_and_event_free() {
 #[tokio::test]
 async fn supports_every_redirect_status() {
     for status in [301, 302, 303, 307, 308] {
-        let json = format!(
-            r#"{{"redirects":[{{
-                "id":"status-{status}",
-                "canonical_url":"http://status.example/test",
-                "redirect_url":"https://destination.example/",
-                "status_code":{status},
-                "response_headers":{{}}
-            }}]}}"#
-        );
-        let source = Arc::new(JsonRedirectSource::from_json(&json).unwrap());
+        let source = static_source(vec![definition(
+            &format!("status-{status}"),
+            "http://status.example/test",
+            "https://destination.example/",
+            status,
+            BTreeMap::new(),
+        )]);
         let sink = Arc::new(RecordingSink::default());
         let app = router(AppState::new(
-            source,
+            runtime(source),
             sink,
             ProxyConfig {
                 trusted_proxies: Vec::new(),
@@ -294,7 +415,7 @@ async fn supports_every_redirect_status() {
 async fn malformed_trusted_forwarding_is_invalid_and_address_can_be_omitted() {
     let sink = Arc::new(RecordingSink::default());
     let app = router(AppState::new(
-        source(),
+        runtime(source()),
         sink.clone(),
         ProxyConfig {
             trusted_proxies: vec!["127.0.0.0/8".parse().unwrap()],
@@ -332,19 +453,32 @@ async fn malformed_trusted_forwarding_is_invalid_and_address_can_be_omitted() {
 
 #[tokio::test]
 async fn lookup_uses_the_public_host_and_preserves_path_identity() {
-    let source = Arc::new(
-        JsonRedirectSource::from_json(
-            r#"{"redirects":[
-                {"id":"one","canonical_url":"http://one.example/a/../b","redirect_url":"https://destination.example/one","status_code":302,"response_headers":{}},
-                {"id":"two","canonical_url":"http://two.example/a/../b","redirect_url":"https://destination.example/two","status_code":302,"response_headers":{}},
-                {"id":"encoded","canonical_url":"http://one.example/%2e%2e/b","redirect_url":"https://destination.example/encoded","status_code":302,"response_headers":{}}
-            ]}"#,
-        )
-        .unwrap(),
-    );
+    let source = static_source(vec![
+        definition(
+            "one",
+            "http://one.example/a/../b",
+            "https://destination.example/one",
+            302,
+            BTreeMap::new(),
+        ),
+        definition(
+            "two",
+            "http://two.example/a/../b",
+            "https://destination.example/two",
+            302,
+            BTreeMap::new(),
+        ),
+        definition(
+            "encoded",
+            "http://one.example/%2e%2e/b",
+            "https://destination.example/encoded",
+            302,
+            BTreeMap::new(),
+        ),
+    ]);
     let sink = Arc::new(RecordingSink::default());
     let app = router(AppState::new(
-        source,
+        runtime(source),
         sink,
         ProxyConfig {
             trusted_proxies: Vec::new(),
@@ -426,7 +560,7 @@ async fn json_source_http_service_and_jsonl_sink_work_together() {
     )
     .unwrap();
     let source: Arc<dyn RedirectSource> =
-        Arc::new(JsonRedirectSource::load(&redirects_path).unwrap());
+        Arc::new(JsonRedirectSource::open(&redirects_path).await.unwrap());
     let sink = Arc::new(JsonlRedirectEventSink::open(&events_path).await.unwrap());
     let app = router(state(source, sink.clone()));
 

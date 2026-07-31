@@ -25,6 +25,9 @@ The HTTP/application layer supplies a complete sanitized event. A sink must not:
 Supported outcomes are `redirected`, `not_found`, `invalid_request`, and
 `source_error`. Sink failure is operational and is never itself a redirect
 outcome. The application logs that failure after choosing the HTTP response.
+`source_error` describes an uncached lookup that could not resolve authoritative
+state. A request served from stale cache remains `redirected` even when its
+background refresh later fails.
 
 `event_id` is a sortable ULID unique to the transaction. `redirect_id` is the
 optional stable source identity and is absent for unresolved requests.

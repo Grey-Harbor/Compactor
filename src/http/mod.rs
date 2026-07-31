@@ -24,8 +24,9 @@ use url::Url;
 
 use crate::domain::{
     CanonicalUrl, ClientInfo, EventId, RedirectEvent, RedirectEventSink, RedirectId,
-    RedirectOutcome, RedirectSource, RequestInfo, ResponseInfo,
+    RedirectOutcome, RequestInfo, ResponseInfo,
 };
+use crate::runtime::RedirectRuntime;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HeaderCaptureLimits {
@@ -49,7 +50,7 @@ impl ProxyConfig {
 
 #[derive(Clone)]
 pub struct AppState {
-    source: Arc<dyn RedirectSource>,
+    runtime: Arc<RedirectRuntime>,
     sink: Arc<dyn RedirectEventSink>,
     proxy: ProxyConfig,
     header_limits: HeaderCaptureLimits,
@@ -57,13 +58,13 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        source: Arc<dyn RedirectSource>,
+        runtime: Arc<RedirectRuntime>,
         sink: Arc<dyn RedirectEventSink>,
         proxy: ProxyConfig,
         header_limits: HeaderCaptureLimits,
     ) -> Self {
         Self {
-            source,
+            runtime,
             sink,
             proxy,
             header_limits,
@@ -170,7 +171,7 @@ async fn process_request(
     } else if method != Method::GET && method != Method::HEAD {
         RequestResult::method_not_allowed()
     } else {
-        resolve_redirect(&state, &scheme, &host, &uri)
+        resolve_redirect(&state, &scheme, &host, &uri).await
     };
 
     let event = RedirectEvent {
@@ -197,7 +198,7 @@ async fn process_request(
     result.into_response(is_head)
 }
 
-fn resolve_redirect(state: &AppState, scheme: &str, host: &str, uri: &Uri) -> RequestResult {
+async fn resolve_redirect(state: &AppState, scheme: &str, host: &str, uri: &Uri) -> RequestResult {
     if !matches!(scheme, "http" | "https") || Authority::from_str(host).is_err() {
         return RequestResult::error(StatusCode::BAD_REQUEST, RedirectOutcome::InvalidRequest);
     }
@@ -208,7 +209,7 @@ fn resolve_redirect(state: &AppState, scheme: &str, host: &str, uri: &Uri) -> Re
         }
     };
 
-    match state.source.resolve(&canonical) {
+    match state.runtime.resolve(&canonical).await {
         Ok(Some(definition)) => {
             let mut destination = definition.redirect_url.clone();
             append_query(&mut destination, uri.query());

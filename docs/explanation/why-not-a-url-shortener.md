@@ -10,7 +10,9 @@ auditable, and dependable on the request path instead of becoming another
 administrative application.
 
 Choose Compactor when redirects are infrastructure-as-data: reviewed outside the
-process, mounted at startup, and deployed through an existing delivery system. It
+process, exposed through a source adapter, and deployed through an existing
+delivery system. The bundled file source can adopt atomically installed changes
+through its runtime cache without becoming a mutation API. It
 is especially suitable for domain migrations, retired routes, stable aliases, and
 small edge or origin services where deterministic behavior matters more than an
 editing interface.

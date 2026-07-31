@@ -6,10 +6,10 @@ that owns redirects, the proxy, the runtime, and the event collector.
 
 ## Confirm the product fit
 
-Compactor is a good fit when redirects can be prepared as a complete configuration
-document, activated by restarting the service, and analyzed outside the request
-path. Choose another product when you require a dashboard, runtime mutation,
-authentication, campaigns, built-in analytics, or zero-restart configuration.
+Compactor is a good fit when redirects can be prepared as authoritative source
+data, activated through a reviewed source rollout, and analyzed outside the
+request path. Choose another product when you require a dashboard, mutation API,
+authentication, campaigns, or built-in analytics.
 
 Review [Why Compactor is not a URL shortener](../explanation/why-not-a-url-shortener.md)
 before treating a missing management feature as an implementation gap.
@@ -22,7 +22,7 @@ Record who owns each boundary:
 | --- | --- |
 | Redirect source | Generate, review, distribute, and roll back the complete JSON document. |
 | Reverse proxy | Terminate TLS and replace forwarding metadata from clients. |
-| Compactor runtime | Run the pinned image, restart after source changes, and monitor logs and health. |
+| Compactor runtime | Run the pinned image, choose cache policy, and monitor logs and health. |
 | Event storage | Provide writable storage and define collection, retention, rotation, and recovery. |
 | DNS and traffic | Route only the intended public hosts to this deployment. |
 
@@ -69,19 +69,37 @@ files, repair partial writes, or manage retention. Decide:
 If those guarantees are insufficient, implement a different
 `RedirectEventSink`; do not infer stronger durability from a successful flush.
 
+## Choose cache and source policy
+
+The default five-minute TTL limits ordinary source work while making updates
+eventually visible. Set `COMPACTOR_REDIRECT_CACHE_TTL_SECONDS` from the required
+change-propagation window and the source's cost. Set
+`COMPACTOR_REDIRECT_CACHE_MAX_ENTRIES` from the active redirect working set and
+available memory. These are operational decisions; automation must not infer them
+from document size alone.
+
+Only successful definitions are cached. Repeated requests for nonexistent keys
+therefore reach the source each time; enforce abusive-request rate limits at the
+reverse proxy. A cached redirect can remain stale indefinitely while its source
+fails, with one retry per key every 30 seconds. Decide whether that availability
+tradeoff is acceptable for security-sensitive redirect changes.
+
 ## Define rollout and rollback
 
 Treat the source and image as separately versioned inputs. For every change:
 
 1. Validate the complete source in a non-production instance.
 2. Keep the previous source and image digest available.
-3. Restart one instance and check `/healthz` before shifting traffic.
-4. Exercise a known redirect and confirm its event.
-5. Roll out remaining instances.
+3. Atomically replace the source on one instance; never rewrite it in place.
+4. Exercise a cold and a changed redirect after the TTL, inspect events, and
+   monitor source-error logs.
+5. Roll out the same validated source to remaining instances.
 6. Roll back both source and image independently when necessary.
 
-Compactor loads the source only at startup. Replacing the file without restarting
-does not change active redirects.
+Roll back by atomically restoring the previous complete document. Cold lookups
+recover immediately and resident definitions recover through refresh; no restart
+is required. `/healthz` does not reread the source, so it cannot prove that a new
+document is valid.
 
 ## Give automation an exact contract
 
@@ -105,10 +123,12 @@ trusted proxy ranges, or retention policy.
 The deployment is ready when:
 
 - the complete source passes startup validation;
+- the selected cache TTL and entry limit fit rollout latency and working-set needs;
 - intended hosts and paths return expected statuses and locations;
 - untrusted forwarding headers cannot change lookup identity;
 - health checks are event-free and monitorable;
 - the runtime UID can append to persistent event storage;
 - event collection and disk limits are tested;
-- source and image rollback procedures are documented; and
+- source and image rollback procedures are documented;
+- source replacements are atomic and source-error logs are monitored; and
 - operators know that sink failure is logged but does not replace the HTTP result.
