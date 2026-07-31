@@ -5,6 +5,18 @@ details. The HTTP layer is the orchestrator because it alone has enough context 
 normalize the request, choose the response, sanitize metadata, and measure the
 transaction. Sources resolve; sinks persist. Neither reconstructs the other's work.
 
-This keeps new adapter combinations possible without turning v0.1 into a framework.
-For component responsibilities and data flow, see the maintained root
-[architecture document](../../ARCHITECTURE.md).
+For an adopter, that separation creates a short and inspectable request path:
+
+1. derive a canonical lookup key from trusted request metadata;
+2. ask the source for one redirect definition;
+3. choose the HTTP response;
+4. construct one sanitized transaction event; and
+5. ask the sink to persist it without changing the response.
+
+The order is deliberate. The source cannot learn about HTTP-specific client
+metadata, and the sink cannot reinterpret the redirect decision. A failing sink
+therefore remains observable without turning successful redirects into errors.
+
+This keeps new adapter combinations possible without turning Compactor into a
+general framework. For component ownership, failure behavior, and the full data
+flow, see the maintained root [architecture document](../../ARCHITECTURE.md).

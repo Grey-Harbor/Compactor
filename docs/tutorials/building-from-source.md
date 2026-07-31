@@ -111,6 +111,9 @@ npm run site:build
 The build produces `site/out/`, including the marketing page, Fumadocs-rendered
 Diátaxis documentation, crawler files, brand assets, and custom-domain file.
 
+Because the site reads Markdown directly from `docs/`, a broken internal link or
+malformed page can affect the static export even when the Rust service is valid.
+
 ## Preview the Pages output locally
 
 Preview the generated export rather than the Next.js development server:
@@ -167,3 +170,5 @@ documentation rendering and GitHub Pages.
   [normalization reference](../reference/url-normalization.md).
 - Deploy the production image with the
   [Docker guide](../how-to/deploy-with-docker.md).
+- Evaluate operational fit with the
+  [production readiness guide](../how-to/prepare-for-production.md).

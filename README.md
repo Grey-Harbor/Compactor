@@ -33,6 +33,10 @@ Events appear in `events.jsonl`. For a containerized start:
 docker compose up --build
 ```
 
+The local example is intentionally minimal. Before routing public traffic, assign
+ownership for proxy trust, event retention, source rollout, and rollback using the
+[production readiness guide](docs/how-to/prepare-for-production.md).
+
 ## Documentation
 
 - [Compactor website](https://compactor.greyharborsoftware.com)
@@ -43,6 +47,7 @@ docker compose up --build
 - [Architecture](ARCHITECTURE.md)
 - [Current release summary](RELEASE.md)
 - [Deployment with Docker](docs/how-to/deploy-with-docker.md)
+- [Production readiness](docs/how-to/prepare-for-production.md)
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
 Compactor v0.1 requires Rust 1.85 or newer.
