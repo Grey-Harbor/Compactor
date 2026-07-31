@@ -21,6 +21,31 @@ duplication, cross-reference related material, and keep tutorials, how-to guides
 reference, and explanation separate. Keep the repository approachable to new
 contributors.
 
+## Documentation quality
+
+Documentation must be instructional first while preserving precise technical
+definitions. Preserve the tone and depth established in the current `docs/` tree.
+
+For every documentation change:
+
+- Begin pages by telling readers when and why to use the information.
+- Prefer complete, copyable examples over fragments.
+- Format JSON and JSONL examples for human review. Show JSONL pretty-printed in
+  documentation while clearly stating that the stored representation is one
+  object per physical line.
+- Define inputs, outputs, defaults, invariants, failure behavior, ownership, and
+  operational limitations explicitly.
+- Distinguish guaranteed behavior from recommendations and adapter-specific
+  behavior.
+- Include rollout, rollback, security, persistence, and observability guidance
+  where operationally relevant.
+- Write for human and AI adopters. Automation guidance must identify which
+  transformations are safe and which business or operational decisions must not
+  be inferred.
+- Cross-reference canonical documents rather than duplicating contracts.
+- Validate fenced JSON, internal links, the Fumadocs type check, and the static
+  site export before committing documentation changes.
+
 ## Planning
 
 Use the local-only, Git-ignored `PLAN.md` before significant features or
