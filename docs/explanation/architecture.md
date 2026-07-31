@@ -3,8 +3,8 @@
 Compactor separates policy-free domain contracts from transport, runtime, and
 storage details. The HTTP layer normalizes the request, chooses the response,
 sanitizes metadata, and measures the transaction. The redirect runtime owns
-residency and freshness. Sources resolve authoritative state; sinks persist
-completed events. None reconstructs another layer's work.
+residency and freshness. JSON or HTTP sources resolve authoritative state; JSONL
+or HTTP sinks deliver completed events. None reconstructs another layer's work.
 
 For an adopter, that separation creates a short and inspectable request path:
 

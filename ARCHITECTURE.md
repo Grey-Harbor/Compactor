@@ -27,12 +27,12 @@ deployment are explicit non-goals.
 ## Context and data flow
 
 ```text
-configuration system ── JSON document ──► JSON source adapter
-                                               │ authoritative resolution
-                                               ▼
+configuration system ── JSON file or remote API ──► source adapter
+                                                        │ authoritative resolution
+                                                        ▼
 client ── proxy ── HTTP ──► request pipeline ──► redirect runtime/cache ──► HTTP response
                               │
-                              └── event ──► JSONL sink ──► external collector
+                              └── event ──► JSONL file or HTTP sink ──► external collector
 ```
 
 JSON and JSONL are reference adapters, not architectural requirements. The
@@ -63,7 +63,12 @@ container release workflows.
   single-flight, stale refresh coordination, and background-task shutdown.
 - `source::json` stores a file path and resolves authoritative state by reopening,
   parsing, and validating the complete document.
+- `source::http` performs one bounded authoritative GET and converts the returned
+  record through the same private validation path as the JSON source.
 - `sink::jsonl` serializes append-only asynchronous writes to one file.
+- `sink::http` performs one bounded POST of the exact immutable event.
+- `adapter_http` owns validated endpoints and credentials plus one pooled,
+  redirect-disabled rustls client shared by selected HTTP adapters.
 - `http` reconstructs public request identity, sanitizes metadata, asks the runtime
   to resolve a redirect, determines the response, and constructs the event.
 - `config` converts `COMPACTOR_` environment variables into validated runtime
@@ -138,20 +143,22 @@ Three URL-shaped values remain distinct:
 This separation prevents canonical normalization from rewriting the observed
 request.
 
-## Startup and source lifecycle
+## Startup and adapter lifecycle
 
 Startup proceeds in dependency order:
 
-1. Parse all `COMPACTOR_` values, including the listener address, booleans,
-   nonzero capture limits, and each trusted IP/CIDR.
-2. Open, read, and deserialize the entire JSON source once for fail-fast
-   validation, then discard the parsed document.
-3. Validate every redirect ID, canonical URL, absolute destination, supported
-   status, and configured response header; reject duplicate IDs and duplicate
-   normalized canonical URLs.
-4. Open or create the append-only event file and verify its parent path is usable.
+1. Parse common settings and the independent source/sink selectors. Validate only
+   settings belonging to selected adapters.
+2. When either HTTP adapter is selected, validate its URL, credentials, headers,
+   positive timeouts and limits, then construct one shared client. No endpoint is
+   contacted during startup; plaintext endpoints produce a warning.
+3. When JSON is selected, read and deserialize the entire source once for
+   fail-fast validation, then discard it. Validate every record and global
+   uniqueness invariant.
+4. When JSONL is selected, open or create the event file and verify its parent is
+   usable.
 5. Construct an initially empty redirect runtime and bind the TCP listener.
-6. Announce readiness with the source path, freshness TTL, and entry limit.
+6. Announce readiness with adapter descriptions, freshness TTL, and entry limit.
 
 Any failure exits before traffic is accepted. Each authoritative file resolution
 reopens and validates the complete document before returning one record. No valid
@@ -164,6 +171,14 @@ Configured status is limited to `301`, `302`, `303`, `307`, and `308`.
 `Location`, `Content-Length`, `Connection`, `Transfer-Encoding`, `Date`, and
 `Server` are protocol-owned and rejected in source configuration. Other configured
 headers must be valid HTTP names and values.
+
+The HTTP source receives a canonical key and appends it as an encoded `url` query
+parameter to its configured endpoint, preserving fixed query parameters. `200`
+must provide an unencoded JSON media type and one valid record within the response
+limit; `404` is authoritative absence; every other response or transport failure
+is a source error. Redirects are not followed and incoming request headers are not
+forwarded. The adapter has no retry or cache behavior, so runtime handling is
+identical to file-source results.
 
 ## Redirect cache lifecycle
 
@@ -212,7 +227,8 @@ For every request except event-free health probes:
 6. Determine the complete status, `Location`, configured headers, redirect ID,
    and outcome.
 7. Stop the processing timer and build the event with a UTC timestamp.
-8. Await event emission. Log a sink error but do not change the response.
+8. Await event emission. The HTTP sink makes one bounded POST; log a sink error
+   but do not change the response.
 9. Return the previously determined response.
 
 The event duration includes validation, lookup, and response construction. It
@@ -231,7 +247,8 @@ headers with an empty body.
 
 Sink failure is deliberately absent from the outcome table. Event persistence is
 secondary to the correct HTTP result and is reported only through operational
-logging.
+logging. Sink latency is excluded from `duration_ms`, though awaiting a selected
+HTTP sink can delay returning that response up to its configured total timeout.
 
 ## Query forwarding and response construction
 
@@ -304,7 +321,8 @@ SIGINT and SIGTERM trigger Axum graceful shutdown: the listener stops accepting
 new connections and in-flight requests may finish. The runtime then rejects new
 lookups, drains source tasks already in flight, and only then logs process
 completion. Source adapters must apply finite backend timeouts; Compactor does not
-impose a separate refresh-drain timeout.
+impose a separate refresh-drain timeout. Request-owned sink calls finish as part
+of Axum's drain, so no separate HTTP sink queue or shutdown worker exists.
 
 ## Deployment topology
 
@@ -320,9 +338,10 @@ remain deployment responsibilities.
 Unit tests enforce validated types, raw-path canonical invariants, query merging,
 header limits, proxy precedence, cold single-flight, state transitions, refresh
 cooldown, bounded LRU residency, and refresh draining. Adapter tests enforce
-complete JSON validation and live rereads plus JSONL creation, append,
-concurrency, flush, and error behavior. HTTP tests cover every redirect status and
-outcome, multi-host tenancy, stale success, raw-path identity,
+complete JSON validation and live rereads, JSONL concurrency, HTTP request
+encoding, authentication, statuses, content types, response bounds, timeouts,
+exact event payloads, and no-retry behavior. HTTP service tests cover every
+redirect status and outcome, multi-host tenancy, stale success, raw-path identity,
 `GET`/`HEAD`/unsupported methods, proxy failures, source and sink failures, and
 duration boundaries. An integration test assembles a path-backed JSON source, the
 runtime, the Axum service, and a real JSONL sink. CI also builds and runs the
@@ -336,8 +355,8 @@ JSONL a prerequisite for future implementations.
 
 New sources implement `RedirectSource`; new event destinations implement
 `RedirectEventSink`. Adapters remain independent and should preserve the domain
-invariants above. A future network source, retrying sink, batching policy, or
-stronger durability guarantee requires an explicit plan because it changes
+invariants above. A retrying sink, batching policy, or stronger durability
+guarantee requires an explicit plan because it changes
 latency, failure, backpressure, or shutdown semantics.
 
 The design favors a simple bundled file adapter behind a shared runtime lifecycle

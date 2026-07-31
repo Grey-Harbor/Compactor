@@ -9,6 +9,8 @@ step-by-step procedure:
   supported statuses, and prohibited headers.
 - [JSONL event format](jsonl-event-format.md) — readable event example, field
   definitions, outcomes, capture limits, and durability.
+- [HTTP adapter protocol](http-adapter-protocol.md) — source GET and event POST
+  wire behavior, status mapping, validation, and transport limits.
 - [URL normalization](url-normalization.md) — the precise identity used for source
   lookup and query forwarding.
 - [Redirect source contract](redirect-source-contract.md) — adapter input, result

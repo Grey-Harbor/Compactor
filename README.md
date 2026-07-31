@@ -9,7 +9,8 @@
 Compactor is a lightweight, adapter-driven URL redirection service. Redirect
 definitions are supplied through a source adapter, while request outcomes are
 emitted through an independent event adapter. The reference implementation uses
-JSON for redirect definitions and JSON Lines for request events.
+JSON for redirect definitions and JSON Lines for request events. Provider-neutral
+HTTP adapters can independently replace either side.
 
 Compactor is infrastructure, not a link-management product. It has no dashboard,
 accounts, campaigns, analytics engine, or mutation API. Configuration management
@@ -44,6 +45,7 @@ ownership for proxy trust, event retention, source rollout, and rollback using t
 - [Getting started](docs/tutorials/getting-started.md)
 - [Building from source](docs/tutorials/building-from-source.md)
 - [Configuration reference](docs/reference/configuration.md)
+- [HTTP adapter tutorial](docs/tutorials/http-adapters.md)
 - [Architecture](ARCHITECTURE.md)
 - [Current release summary](RELEASE.md)
 - [Deployment with Docker](docs/how-to/deploy-with-docker.md)

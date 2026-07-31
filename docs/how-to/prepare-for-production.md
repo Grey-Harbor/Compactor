@@ -20,10 +20,10 @@ Record who owns each boundary:
 
 | Boundary | Required owner decision |
 | --- | --- |
-| Redirect source | Generate, review, distribute, and roll back the complete JSON document. |
+| Redirect source | Own JSON rollout or the HTTP service's availability, contract, authentication, and rollback. |
 | Reverse proxy | Terminate TLS and replace forwarding metadata from clients. |
 | Compactor runtime | Run the pinned image, choose cache policy, and monitor logs and health. |
-| Event storage | Provide writable storage and define collection, retention, rotation, and recovery. |
+| Event destination | Own JSONL storage or HTTP receiver availability, retention, and recovery. |
 | DNS and traffic | Route only the intended public hosts to this deployment. |
 
 Do not deploy until every row has an owner.
@@ -68,6 +68,9 @@ files, repair partial writes, or manage retention. Decide:
 
 If those guarantees are insufficient, implement a different
 `RedirectEventSink`; do not infer stronger durability from a successful flush.
+With the HTTP sink, decide whether best-effort one-attempt delivery is sufficient.
+There is no retry, batching, or durable spool, and an unavailable receiver loses
+the event after the bounded call even though the selected redirect still succeeds.
 
 ## Choose cache and source policy
 
@@ -101,12 +104,23 @@ recover immediately and resident definitions recover through refresh; no restart
 is required. `/healthz` does not reread the source, so it cannot prove that a new
 document is valid.
 
+For an HTTP source, deploy and validate the remote service before selecting it,
+then exercise both a found and missing cold key. Roll back by restoring the prior
+source selection or endpoint and restarting Compactor. Cached definitions protect
+refresh failures indefinitely, but cold keys return `500`; rate-limit repeated
+unknown keys at the proxy because not-found results are deliberately uncached.
+For either HTTP adapter, use HTTPS, protect bearer files, and monitor timeout,
+transport, status, and validation error categories. Health is intentionally not
+readiness for these dependencies.
+
 ## Give automation an exact contract
 
 Humans and AI agents should make changes from the same inputs:
 
 - the [JSON source format](../reference/json-source-format.md) for fields and
   validation;
+- the [HTTP adapter protocol](../reference/http-adapter-protocol.md) for remote
+  source and sink behavior;
 - the [URL normalization reference](../reference/url-normalization.md) for lookup
   identity;
 - the [configuration reference](../reference/configuration.md) for runtime values;

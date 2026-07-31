@@ -46,4 +46,5 @@ the runtime rejects a mismatch as a source error.
 
 Implement finite I/O timeouts inside network-backed adapters. Graceful shutdown
 waits for source work already in flight and does not impose an independent timeout.
-For the bundled implementation, see the [JSON source format](json-source-format.md).
+For bundled implementations, see the [JSON source format](json-source-format.md)
+and [HTTP adapter protocol](http-adapter-protocol.md).
