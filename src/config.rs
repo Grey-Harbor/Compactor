@@ -1,8 +1,10 @@
 use std::{
     env,
     net::{IpAddr, SocketAddr},
+    num::NonZeroUsize,
     path::PathBuf,
     str::FromStr,
+    time::Duration,
 };
 
 use ipnet::IpNet;
@@ -16,6 +18,8 @@ pub struct Config {
     pub record_client_addresses: bool,
     pub max_captured_header_value_bytes: usize,
     pub max_captured_header_total_bytes: usize,
+    pub redirect_cache_ttl: Duration,
+    pub redirect_cache_max_entries: NonZeroUsize,
 }
 
 impl Config {
@@ -32,6 +36,15 @@ impl Config {
             parse_nonzero_usize("COMPACTOR_MAX_CAPTURED_HEADER_VALUE_BYTES", "1024")?;
         let max_captured_header_total_bytes =
             parse_nonzero_usize("COMPACTOR_MAX_CAPTURED_HEADER_TOTAL_BYTES", "4096")?;
+        let redirect_cache_ttl = Duration::from_secs(parse_nonzero_u64(
+            "COMPACTOR_REDIRECT_CACHE_TTL_SECONDS",
+            "300",
+        )?);
+        let redirect_cache_max_entries = NonZeroUsize::new(parse_nonzero_usize(
+            "COMPACTOR_REDIRECT_CACHE_MAX_ENTRIES",
+            "10000",
+        )?)
+        .expect("positive cache entry count is nonzero");
 
         Ok(Self {
             bind_address,
@@ -41,6 +54,8 @@ impl Config {
             record_client_addresses,
             max_captured_header_value_bytes,
             max_captured_header_total_bytes,
+            redirect_cache_ttl,
+            redirect_cache_max_entries,
         })
     }
 }
@@ -62,6 +77,20 @@ fn parse_nonzero_usize(name: &str, default: &str) -> Result<usize, String> {
 fn parse_nonzero_usize_value(name: &str, value: &str) -> Result<usize, String> {
     let parsed = value
         .parse::<usize>()
+        .map_err(|_| format!("{name} must be a positive integer"))?;
+    if parsed == 0 {
+        return Err(format!("{name} must be greater than zero"));
+    }
+    Ok(parsed)
+}
+
+fn parse_nonzero_u64(name: &str, default: &str) -> Result<u64, String> {
+    parse_nonzero_u64_value(name, &value(name, default))
+}
+
+fn parse_nonzero_u64_value(name: &str, value: &str) -> Result<u64, String> {
+    let parsed = value
+        .parse::<u64>()
         .map_err(|_| format!("{name} must be a positive integer"))?;
     if parsed == 0 {
         return Err(format!("{name} must be greater than zero"));
@@ -101,5 +130,8 @@ mod tests {
         assert!(parse_nonzero_usize_value("TEST_LIMIT", "0").is_err());
         assert!(parse_nonzero_usize_value("TEST_LIMIT", "-1").is_err());
         assert!(parse_nonzero_usize_value("TEST_LIMIT", "many").is_err());
+        assert!(parse_nonzero_u64_value("TEST_TTL", "0").is_err());
+        assert!(parse_nonzero_u64_value("TEST_TTL", "-1").is_err());
+        assert!(parse_nonzero_u64_value("TEST_TTL", "forever").is_err());
     }
 }

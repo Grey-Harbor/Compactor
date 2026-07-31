@@ -43,6 +43,20 @@ Pin production deployments to a version tag or image digest rather than `latest`
 On upgrade, keep the previous image and redirect source available, start one
 instance, check `/healthz`, and exercise a known redirect before shifting traffic.
 
+Configure cache policy with environment variables when the defaults do not fit:
+
+```yaml
+environment:
+  COMPACTOR_REDIRECT_CACHE_TTL_SECONDS: "300"
+  COMPACTOR_REDIRECT_CACHE_MAX_ENTRIES: "10000"
+```
+
+The source mount must expose atomic file replacement if redirects will change
+without a container restart. Some single-file bind mounts do not follow a rename
+performed on the host; use a read-only directory mount or your platform's atomic
+configuration projection and verify the behavior. See
+[Configure the JSON redirect source](configure-json-source.md) before rollout.
+
 ## Stop without deleting events
 
 ```sh

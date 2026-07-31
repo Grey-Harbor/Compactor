@@ -17,19 +17,21 @@ repository's Markdown documentation at build time and publishes generated HTML;
 it does not communicate with a running Compactor service or change the runtime
 boundary.
 
-The v0.1 goals are deterministic multi-host lookup, correct redirect responses,
-bounded privacy-aware events, independently replaceable source and sink adapters,
-and predictable startup and shutdown. Management APIs, runtime source mutation,
-authentication, dashboards, analytics, databases, metrics, retry queues, batching,
-event rotation, and service deployment are explicit non-goals.
+The v0.2 goals are deterministic multi-host lookup, source-independent redirect
+caching, correct redirect responses, bounded privacy-aware events, independently
+replaceable source and sink adapters, and predictable startup and shutdown.
+Management APIs, source mutation APIs, authentication, dashboards, analytics,
+databases, metrics, event retry queues, batching, event rotation, and service
+deployment are explicit non-goals.
 
 ## Context and data flow
 
 ```text
 configuration system ── JSON document ──► JSON source adapter
-                                               │
-client ── proxy ── HTTP ──► request pipeline ──┼──► HTTP redirect/error
-                              │                │
+                                               │ authoritative resolution
+                                               ▼
+client ── proxy ── HTTP ──► request pipeline ──► redirect runtime/cache ──► HTTP response
+                              │
                               └── event ──► JSONL sink ──► external collector
 ```
 
@@ -57,11 +59,13 @@ container release workflows.
 - `domain` owns validated redirect IDs, event IDs, canonical URLs, constrained
   redirect statuses, permitted response headers, event values, explicit adapter
   errors, `RedirectSource`, and `RedirectEventSink`.
-- `source::json` atomically parses and validates a complete source document, then
-  provides immutable in-memory lookup.
+- `runtime` owns positive redirect residency, freshness, LRU eviction, cold-load
+  single-flight, stale refresh coordination, and background-task shutdown.
+- `source::json` stores a file path and resolves authoritative state by reopening,
+  parsing, and validating the complete document.
 - `sink::jsonl` serializes append-only asynchronous writes to one file.
-- `http` reconstructs public request identity, sanitizes metadata, orchestrates
-  lookup, determines the response, and constructs the event.
+- `http` reconstructs public request identity, sanitizes metadata, asks the runtime
+  to resolve a redirect, determines the response, and constructs the event.
 - `config` converts `COMPACTOR_` environment variables into validated runtime
   values.
 - `main` initializes logging and adapters, binds the listener only after startup
@@ -74,21 +78,28 @@ Adapters depend inward on the domain; the domain never imports an adapter.
 
 ## Domain contracts and ownership
 
-`RedirectSource` is object-safe and synchronous:
+`RedirectSource` is object-safe and asynchronous:
 
 ```rust
+#[async_trait]
 pub trait RedirectSource: Send + Sync {
-    fn resolve(
+    async fn resolve(
         &self,
         canonical_url: &CanonicalUrl,
     ) -> Result<Option<RedirectDefinition>, RedirectSourceError>;
 }
 ```
 
-The reference lookup is immutable memory, so making the v0.1 contract synchronous
-avoids unnecessary async machinery. The explicit error distinguishes a source
-failure from a valid miss. A network-backed source may require a future,
-deliberate contract revision.
+The explicit error distinguishes a source failure from a valid miss. Sources own
+only authoritative resolution and external-record validation. They do not own
+TTL, cache residency, refresh, eviction, request outcomes, or cross-request
+coordination. The asynchronous contract permits file and future network-backed
+sources without exposing backend-specific behavior to the runtime.
+
+`RedirectRuntime` wraps one source and applies `RedirectCachePolicy`, whose public
+inputs are a positive freshness TTL and a positive maximum resident-entry count.
+HTTP depends on the runtime rather than the source. This keeps every file, HTTP,
+database, or future custom source behind the same lifecycle.
 
 `RedirectEventSink` is object-safe and asynchronous because emission may perform
 I/O. The HTTP layer passes it a complete event. A sink does not inspect requests,
@@ -133,21 +144,57 @@ Startup proceeds in dependency order:
 
 1. Parse all `COMPACTOR_` values, including the listener address, booleans,
    nonzero capture limits, and each trusted IP/CIDR.
-2. Read and deserialize the entire JSON source.
+2. Open, read, and deserialize the entire JSON source once for fail-fast
+   validation, then discard the parsed document.
 3. Validate every redirect ID, canonical URL, absolute destination, supported
    status, and configured response header; reject duplicate IDs and duplicate
    normalized canonical URLs.
 4. Open or create the append-only event file and verify its parent path is usable.
-5. Bind the TCP listener and announce readiness.
+5. Construct an initially empty redirect runtime and bind the TCP listener.
+6. Announce readiness with the source path, freshness TTL, and entry limit.
 
-Any failure exits before traffic is accepted. Source loading is atomic: no partial
-document becomes visible. The in-memory source is immutable for the process
-lifetime, so configuration changes take effect after a restart.
+Any failure exits before traffic is accepted. Each authoritative file resolution
+reopens and validates the complete document before returning one record. No valid
+subset of a malformed document becomes visible. File replacements therefore take
+effect without restarting, subject to cache freshness. Operators must install a
+complete file atomically; an in-place partial write can cause cold lookups to fail
+while resident redirects continue through stale serving.
 
 Configured status is limited to `301`, `302`, `303`, `307`, and `308`.
 `Location`, `Content-Length`, `Connection`, `Transfer-Encoding`, `Date`, and
 `Server` are protocol-owned and rejected in source configuration. Other configured
 headers must be valid HTTP names and values.
+
+## Redirect cache lifecycle
+
+Only successful definitions become resident. `NotFound` and source errors are not
+cached. Concurrent cold requests for one canonical URL share one source call and
+receive the same result; unrelated keys resolve independently.
+
+A resident entry is `Fresh`, `Refreshing`, or stale with a retry time. Freshness
+uses Tokio's monotonic clock and begins when source resolution completes. The
+first request at or after expiry atomically marks the entry `Refreshing`, starts
+one background source call, and immediately returns the stale definition. Other
+requests continue returning that definition and do not start more refreshes.
+
+Refresh completion has three outcomes:
+
+| Source result | Resident transition | Triggering HTTP response |
+| --- | --- | --- |
+| Found | Replace definition and become fresh for one TTL | Previously cached redirect |
+| Not found | Remove the entry | Previously cached redirect, served one last time |
+| Error | Keep stale data and defer retry for 30 seconds | Previously cached redirect |
+
+There is no hard stale-age limit. After a refresh failure, one request at or after
+the retry time may start another refresh. The failure is logged, but the request
+event remains `redirected` because that is the response actually selected.
+
+The cache holds at most the configured number of resident definitions and updates
+recency on every hit. Insertion evicts the least-recently-used entry that is not
+refreshing. A refresh in flight is never cancelled for eviction; if every resident
+entry is refreshing, a new source result is returned to its callers without being
+cached. In-flight cold-load coordination is transient and does not count as
+resident redirect data.
 
 ## Request lifecycle
 
@@ -161,7 +208,7 @@ For every request except event-free health probes:
    without calling the source.
 4. Reject methods other than `GET` and `HEAD` with `405` and
    `Allow: GET, HEAD`, also without calling the source.
-5. Construct the query-free canonical URL and call the source.
+5. Construct the query-free canonical URL and ask the redirect runtime to resolve it.
 6. Determine the complete status, `Location`, configured headers, redirect ID,
    and outcome.
 7. Stop the processing timer and build the event with a UTC timestamp.
@@ -174,13 +221,13 @@ Events are constructed after response determination, so their response fields
 describe what the pipeline intends to return. `HEAD` mirrors `GET` status and
 headers with an empty body.
 
-| Condition | Status | Outcome | Source called | Redirect ID / location |
+| Condition | Status | Outcome | Runtime behavior | Redirect ID / location |
 | --- | ---: | --- | --- | --- |
-| Matching definition | configured 3xx | `redirected` | yes | both present |
-| Valid miss | 404 | `not_found` | yes | both null |
-| Invalid metadata or URL | 400 | `invalid_request` | no | both null |
-| Unsupported method | 405 | `invalid_request` | no | both null |
-| Source adapter error | 500 | `source_error` | yes | both null |
+| Fresh, stale, or newly resolved definition | configured 3xx | `redirected` | return definition | both present |
+| Authoritative miss | 404 | `not_found` | do not cache | both null |
+| Invalid metadata or URL | 400 | `invalid_request` | not called | both null |
+| Unsupported method | 405 | `invalid_request` | not called | both null |
+| Cold source adapter error | 500 | `source_error` | do not cache | both null |
 
 Sink failure is deliberately absent from the outcome table. Event persistence is
 secondary to the correct HTTP result and is reported only through operational
@@ -237,7 +284,7 @@ backpressure: requests can complete processing concurrently but event writes que
 behind the file.
 
 Every successful `emit` has flushed one complete JSONL record through Tokio's
-buffer to the operating system. v0.1 does not call `fsync`, promise survival
+buffer to the operating system. Compactor does not call `fsync`, promise survival
 across power loss, repair a partial record after process or filesystem failure,
 retry, rotate, batch, or ship data. Those responsibilities belong to a future sink
 or external tooling.
@@ -254,8 +301,10 @@ shutdown, source failures, malformed trusted metadata, and sink failures are
 operational signals; request event data remains in the event adapter.
 
 SIGINT and SIGTERM trigger Axum graceful shutdown: the listener stops accepting
-new connections, in-flight requests may finish, and the process logs completion.
-There is no background retry queue requiring a separate drain phase.
+new connections and in-flight requests may finish. The runtime then rejects new
+lookups, drains source tasks already in flight, and only then logs process
+completion. Source adapters must apply finite backend timeouts; Compactor does not
+impose a separate refresh-drain timeout.
 
 ## Deployment topology
 
@@ -269,12 +318,14 @@ remain deployment responsibilities.
 ## Verification strategy
 
 Unit tests enforce validated types, raw-path canonical invariants, query merging,
-header limits, proxy precedence, and trusted-chain walking. Adapter tests enforce
-atomic JSON validation and JSONL creation, append, concurrency, flush, and error
-behavior. HTTP tests cover every redirect status and outcome, multi-host tenancy,
-raw-path identity, `GET`/`HEAD`/unsupported methods, proxy failures, source and sink
-failures, and duration boundaries. An integration test assembles a file-loaded
-JSON source, the Axum service, and a real JSONL sink. CI also builds and runs the
+header limits, proxy precedence, cold single-flight, state transitions, refresh
+cooldown, bounded LRU residency, and refresh draining. Adapter tests enforce
+complete JSON validation and live rereads plus JSONL creation, append,
+concurrency, flush, and error behavior. HTTP tests cover every redirect status and
+outcome, multi-host tenancy, stale success, raw-path identity,
+`GET`/`HEAD`/unsupported methods, proxy failures, source and sink failures, and
+duration boundaries. An integration test assembles a path-backed JSON source, the
+runtime, the Axum service, and a real JSONL sink. CI also builds and runs the
 production image as its non-root user, probes health and a real redirect/event,
 and verifies graceful SIGTERM shutdown.
 
@@ -289,9 +340,10 @@ invariants above. A future network source, retrying sink, batching policy, or
 stronger durability guarantee requires an explicit plan because it changes
 latency, failure, backpressure, or shutdown semantics.
 
-The design favors a small synchronous lookup and per-record flush over maximum
-throughput. It favors explicit trusted-proxy configuration over convenient but
-unsafe auto-detection, raw path identity over aggressive normalization, and
+The design favors a simple bundled file adapter behind a shared runtime lifecycle
+and per-record event flush over maximum throughput. It favors stale redirect
+availability over surfacing refresh failures, explicit trusted-proxy configuration
+over unsafe auto-detection, raw path identity over aggressive normalization, and
 non-fatal event failure over sacrificing the primary redirect response.
 
 Compactor is distributed under the Apache License, Version 2.0. Licensing does

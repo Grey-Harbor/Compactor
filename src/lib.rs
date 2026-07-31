@@ -1,6 +1,7 @@
 pub mod config;
 pub mod domain;
 pub mod http;
+pub mod runtime;
 pub mod sink;
 pub mod source;
 
@@ -11,5 +12,6 @@ pub use domain::{
     RedirectStatus, RequestInfo, ResponseHeaders, ResponseInfo,
 };
 pub use http::{AppState, HeaderCaptureLimits, ProxyConfig, router};
+pub use runtime::{RedirectCachePolicy, RedirectRuntime};
 pub use sink::JsonlRedirectEventSink;
 pub use source::JsonRedirectSource;

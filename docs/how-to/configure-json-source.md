@@ -1,7 +1,7 @@
 # Configure the JSON Redirect Source
 
-Use this guide to create or replace the complete set of redirects loaded by one
-Compactor process.
+Use this guide to create, activate, and roll back the complete redirect document
+resolved by one Compactor process.
 
 ## Create the document
 
@@ -36,7 +36,7 @@ jq empty /etc/compactor/redirects.json
 ```
 
 This checks syntax only. Compactor performs the authoritative field, URL, status,
-header, and duplicate validation during startup.
+header, and duplicate validation during startup and every authoritative lookup.
 
 ## Point Compactor at the file
 
@@ -50,18 +50,34 @@ public `Host` value expected in `canonical_url`.
 
 ## Replace active configuration
 
-Compactor reads the entire file once during startup. To make a change:
+Compactor validates the source at startup, then rereads it when the runtime has a
+cold miss or refreshes a stale redirect. To make a change without restarting:
 
-1. Generate and review a complete replacement document.
-2. Validate it in a separate Compactor process or staging instance.
+1. Generate and review a complete replacement document in a separate path.
+2. Validate it in a staging instance or with the same Compactor version.
 3. Keep the current document available for rollback.
-4. Install the replacement through configuration management.
-5. Restart Compactor and wait for `/healthz` before shifting traffic.
-6. Exercise a changed redirect and inspect its event.
+4. Atomically rename the replacement over the configured path on the same
+   filesystem. Do not truncate and rewrite the active file in place.
+5. Exercise a changed redirect after its configured cache TTL and inspect the
+   event. A newly added key is available on its first lookup.
 
-If any definition is invalid, startup fails and no traffic is accepted. Compactor
-never serves the valid subset of a partially invalid document. Replacing the file
-without restarting does not alter the in-memory source.
+An updated definition remains cached until its TTL expires. The first request at
+expiry receives the old redirect immediately and starts a background refresh;
+later requests receive the replacement after refresh succeeds. A deleted
+definition is similarly served once after expiry, then removed.
+
+If any definition in a replacement is invalid, cold keys return `500` with a
+`source_error` event. Existing resident redirects remain available as stale data;
+refresh failures are logged and retried no more than once per key every 30 seconds.
+Compactor never serves the valid subset of a partially invalid document.
+
+## Roll back a source change
+
+Atomically restore the previous complete document at the configured path. No
+process restart is required. Cold keys recover on their next lookup; stale entries
+recover on the first eligible refresh. `/healthz` reports process health and does
+not validate a replacement after startup, so verify a known redirect and monitor
+source-error logs during rollout and rollback.
 
 For automated changes, require explicit values for destinations, status codes,
 headers, and public hosts. Formatting or sorting a reviewed document is safe;

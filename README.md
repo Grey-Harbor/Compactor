@@ -16,7 +16,7 @@ accounts, campaigns, analytics engine, or mutation API. Configuration management
 and event analysis stay in the systems built for those jobs.
 
 ```text
-request → canonical URL → redirect source → response → event sink
+request → canonical URL → redirect runtime/cache → source → response → event sink
 ```
 
 ## Start locally
@@ -50,7 +50,7 @@ ownership for proxy trust, event retention, source rollout, and rollback using t
 - [Production readiness](docs/how-to/prepare-for-production.md)
 - [Why Compactor is not a URL shortener](docs/explanation/why-not-a-url-shortener.md)
 
-Compactor v0.1 requires Rust 1.85 or newer.
+Compactor v0.2 requires Rust 1.85 or newer.
 
 The website publishes this repository's Markdown documentation through Fumadocs.
 The files under `docs/` remain the source of truth.
@@ -65,12 +65,12 @@ strict Clippy checks, the Compose model, the production container build, and a
 non-root runtime smoke test covering health, redirects, events, and graceful
 shutdown. The CI workflow does not publish artifacts.
 
-Pushing a stable semantic version tag such as `v0.1.0` runs the complete CI gate,
+Pushing a stable semantic version tag such as `v0.2.0` runs the complete CI gate,
 then publishes Linux AMD64 and ARM64 images with provenance and SBOM attestations
 to GitHub Container Registry:
 
 ```sh
-docker pull ghcr.io/grey-harbor/compactor:0.1.0
+docker pull ghcr.io/grey-harbor/compactor:0.2.0
 ```
 
 Release images are also tagged with their minor, major, and `latest` aliases. No

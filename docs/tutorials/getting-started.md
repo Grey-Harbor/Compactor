@@ -78,12 +78,14 @@ Check these fields:
 - `response.status_code` is `302`.
 
 Stop Compactor with `Ctrl-C`. A graceful shutdown logs that the service stopped.
+The runtime finishes any redirect refresh already in flight before that final log.
 
 ## What you learned
 
-You supplied immutable redirect configuration, started only after validation,
-looked up a query-free canonical URL, returned a redirect with the query appended,
-and emitted a bounded event.
+You supplied a startup-validated redirect source, resolved a query-free canonical
+URL through the runtime cache, returned a redirect with the query appended, and
+emitted a bounded event. Valid atomic source replacements can take effect later
+without restarting, according to the cache TTL.
 
 Next, learn how to [configure redirects](../how-to/configure-json-source.md) and
 review the [normalization rules](../reference/url-normalization.md). To use the

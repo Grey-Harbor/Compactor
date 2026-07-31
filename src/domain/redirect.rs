@@ -8,6 +8,8 @@ use http::{
 use serde::{Deserialize, Serialize};
 use url::{Position, Url};
 
+use async_trait::async_trait;
+
 use super::RedirectSourceError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -220,8 +222,9 @@ pub struct RedirectDefinition {
     pub response_headers: ResponseHeaders,
 }
 
+#[async_trait]
 pub trait RedirectSource: Send + Sync {
-    fn resolve(
+    async fn resolve(
         &self,
         canonical_url: &CanonicalUrl,
     ) -> Result<Option<RedirectDefinition>, RedirectSourceError>;

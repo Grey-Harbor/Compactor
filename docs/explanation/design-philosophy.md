@@ -1,13 +1,16 @@
 # Design Philosophy
 
-Compactor treats redirection as a small infrastructure primitive. Static startup
-validation makes configuration failures loud and runtime behavior predictable.
-Opaque IDs preserve identity independently of URLs. Explicit constrained types
-make invalid statuses and protocol-owned headers difficult to represent.
+Compactor treats redirection as a small infrastructure primitive. Fail-fast
+source validation makes initial configuration failures loud, while a shared
+runtime cache gives every source the same predictable lifecycle. Opaque IDs
+preserve identity independently of URLs. Explicit constrained types make invalid
+statuses and protocol-owned headers difficult to represent.
 
 These choices favor operations that are easy to reason about:
 
-- redirect definitions are loaded and validated before traffic is accepted;
+- the source is validated before traffic and on every authoritative resolution;
+- the runtime, rather than adapters, owns freshness, residency, and concurrency;
+- stale redirects remain fast and available while one refresh runs;
 - requests perform deterministic lookup instead of modifying configuration;
 - source-owned IDs keep analytics identity stable when URLs change;
 - bounded metadata capture makes privacy and storage costs explicit; and

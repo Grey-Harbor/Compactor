@@ -1,6 +1,6 @@
 [package]
 name = "compactor"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "A lightweight, adapter-driven URL redirection service"
@@ -23,6 +23,7 @@ url = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]

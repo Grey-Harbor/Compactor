@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use compactor::{
     AppState, Config, HeaderCaptureLimits, JsonRedirectSource, JsonlRedirectEventSink, ProxyConfig,
-    router,
+    RedirectCachePolicy, RedirectRuntime, router,
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -18,11 +18,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = Config::from_env()?;
-    let source = Arc::new(JsonRedirectSource::load(&config.redirects_file)?);
-    let redirect_count = source.len();
+    let source = Arc::new(JsonRedirectSource::open(&config.redirects_file).await?);
+    let runtime = Arc::new(RedirectRuntime::new(
+        source,
+        RedirectCachePolicy::new(config.redirect_cache_ttl, config.redirect_cache_max_entries),
+    ));
     let sink = Arc::new(JsonlRedirectEventSink::open(&config.events_file).await?);
     let state = AppState::new(
-        source,
+        Arc::clone(&runtime),
         sink,
         ProxyConfig {
             trusted_proxies: config.trusted_proxies,
@@ -36,7 +39,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(config.bind_address).await?;
     info!(
         bind_address = %config.bind_address,
-        redirect_count,
+        redirects_file = %config.redirects_file.display(),
+        redirect_cache_ttl_seconds = config.redirect_cache_ttl.as_secs(),
+        redirect_cache_max_entries = config.redirect_cache_max_entries.get(),
         "Compactor is ready"
     );
     axum::serve(
@@ -45,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    runtime.shutdown().await;
     info!("Compactor stopped");
     Ok(())
 }

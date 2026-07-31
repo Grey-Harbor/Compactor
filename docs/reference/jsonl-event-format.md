@@ -76,7 +76,7 @@ tail -n 1 events.jsonl | jq .
 | `redirected` | configured 3xx | A definition matched. `redirect_id` and `location` are present. |
 | `not_found` | `404` | Lookup succeeded with no definition. |
 | `invalid_request` | `400` or `405` | Metadata, URL identity, or method was rejected before a successful lookup. |
-| `source_error` | `500` | The source adapter failed during lookup. |
+| `source_error` | `500` | The source adapter failed during an uncached lookup. Background refresh failures keep serving stale redirects and therefore emit `redirected` for those requests. |
 
 Sink failure is not an outcome. The event describes the response Compactor
 determined before emission; a sink error is logged and does not replace that HTTP
@@ -94,6 +94,6 @@ captured.
 ## Write and durability behavior
 
 Writes append, serialize concurrent access, and flush per record. Flush does not
-perform a per-event `fsync`, so v0.1 does not promise survival across power loss or
+perform a per-event `fsync`, so Compactor does not promise survival across power loss or
 repair partial records after a process/filesystem failure. JSONL is an event
 adapter format, not the event architecture.

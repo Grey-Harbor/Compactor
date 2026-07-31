@@ -29,8 +29,8 @@ sed -n '1p' RELEASE.md
 Create the annotated tag directly from the release summary, then push it:
 
 ```sh
-git tag -a --cleanup=verbatim v0.1.0 -F RELEASE.md
-git push origin v0.1.0
+git tag -a --cleanup=verbatim v0.2.0 -F RELEASE.md
+git push origin v0.2.0
 ```
 
 The `--cleanup=verbatim` option preserves Markdown headings and blank lines.
@@ -41,10 +41,10 @@ Never move, recreate, or force-push a published release tag. Prepare the next
 version when a correction is required.
 
 The release workflow runs the complete CI gate before publishing Linux AMD64 and
-ARM64 images to GitHub Container Registry. For `v0.1.0`, it publishes:
+ARM64 images to GitHub Container Registry. For `v0.2.0`, it publishes:
 
 ```text
-ghcr.io/grey-harbor/compactor:0.1.0
+ghcr.io/grey-harbor/compactor:0.2.0
 ghcr.io/grey-harbor/compactor:0.1
 ghcr.io/grey-harbor/compactor:0
 ghcr.io/grey-harbor/compactor:latest
