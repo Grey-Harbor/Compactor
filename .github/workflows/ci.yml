@@ -89,6 +89,44 @@ jobs:
           docker logs compactor-ci >"$RUNNER_TEMP/compactor.log" 2>&1
           grep --quiet 'Compactor stopped' "$RUNNER_TEMP/compactor.log"
           docker rm compactor-ci
+
+          cargo build --locked --example http_adapter_mock
+          MOCK_BIND_ADDRESS=0.0.0.0:19090 \
+            target/debug/examples/http_adapter_mock \
+            >"$RUNNER_TEMP/http-mock.log" 2>&1 &
+          mock_pid="$!"
+          docker run --detach \
+            --name compactor-http-ci \
+            --publish 18081:8080 \
+            --add-host host.docker.internal:host-gateway \
+            --env COMPACTOR_SOURCE_TYPE=http \
+            --env COMPACTOR_HTTP_SOURCE_URL=http://host.docker.internal:19090/resolve \
+            --env COMPACTOR_EVENT_SINK_TYPE=http \
+            --env COMPACTOR_HTTP_EVENT_SINK_URL=http://host.docker.internal:19090/events \
+            compactor:ci
+          cleanup_http() {
+            docker rm --force compactor-http-ci >/dev/null 2>&1 || true
+            kill "$mock_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup_http EXIT
+          for attempt in {1..20}; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --header 'Host: go.example' \
+              http://127.0.0.1:18081/docs || true)"
+            if [[ "$status" = 308 ]]; then
+              break
+            fi
+            if [[ "$attempt" = 20 ]]; then
+              docker logs compactor-http-ci
+              cat "$RUNNER_TEMP/http-mock.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          grep --quiet 'Redirected' "$RUNNER_TEMP/http-mock.log"
+          docker stop --timeout 10 compactor-http-ci
+          docker rm compactor-http-ci
+          kill "$mock_pid"
           trap - EXIT
 
   website:
