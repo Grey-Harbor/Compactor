@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use compactor::{
-    AppState, Config, HeaderCaptureLimits, JsonRedirectSource, JsonlRedirectEventSink, ProxyConfig,
-    RedirectCachePolicy, RedirectRuntime, router,
+    AppState, Config, HeaderCaptureLimits, HttpRedirectEventSink, HttpRedirectSource,
+    HttpTransport, JsonRedirectSource, JsonlRedirectEventSink, ProxyConfig, RedirectCachePolicy,
+    RedirectEventSink, RedirectEventSinkConfig, RedirectRuntime, RedirectSource,
+    RedirectSourceConfig, router,
 };
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -18,12 +20,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = Config::from_env()?;
-    let source = Arc::new(JsonRedirectSource::open(&config.redirects_file).await?);
+    let transport = config.http_transport.map(HttpTransport::new).transpose()?;
+    let (source, source_description): (Arc<dyn RedirectSource>, String) = match &config.source {
+        RedirectSourceConfig::Json { path } => (
+            Arc::new(JsonRedirectSource::open(path).await?),
+            format!("json:{}", path.display()),
+        ),
+        RedirectSourceConfig::Http {
+            endpoint,
+            max_response_bytes,
+        } => {
+            warn_if_plaintext("redirect source", endpoint);
+            (
+                Arc::new(HttpRedirectSource::new(
+                    transport.clone().expect("HTTP transport is configured"),
+                    endpoint.clone(),
+                    *max_response_bytes,
+                )?),
+                format!("http:{}", endpoint.endpoint_origin()),
+            )
+        }
+    };
     let runtime = Arc::new(RedirectRuntime::new(
         source,
         RedirectCachePolicy::new(config.redirect_cache_ttl, config.redirect_cache_max_entries),
     ));
-    let sink = Arc::new(JsonlRedirectEventSink::open(&config.events_file).await?);
+    let (sink, sink_description): (Arc<dyn RedirectEventSink>, String) = match &config.event_sink {
+        RedirectEventSinkConfig::Jsonl { path } => (
+            Arc::new(JsonlRedirectEventSink::open(path).await?),
+            format!("jsonl:{}", path.display()),
+        ),
+        RedirectEventSinkConfig::Http { endpoint } => {
+            warn_if_plaintext("event sink", endpoint);
+            (
+                Arc::new(HttpRedirectEventSink::new(
+                    transport.expect("HTTP transport is configured"),
+                    endpoint.clone(),
+                )?),
+                format!("http:{}", endpoint.endpoint_origin()),
+            )
+        }
+    };
     let state = AppState::new(
         Arc::clone(&runtime),
         sink,
@@ -39,7 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(config.bind_address).await?;
     info!(
         bind_address = %config.bind_address,
-        redirects_file = %config.redirects_file.display(),
+        redirect_source = %source_description,
+        event_sink = %sink_description,
         redirect_cache_ttl_seconds = config.redirect_cache_ttl.as_secs(),
         redirect_cache_max_entries = config.redirect_cache_max_entries.get(),
         "Compactor is ready"
@@ -53,6 +91,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     runtime.shutdown().await;
     info!("Compactor stopped");
     Ok(())
+}
+
+fn warn_if_plaintext(role: &str, endpoint: &compactor::HttpEndpointConfig) {
+    if endpoint.uses_plaintext_http() {
+        warn!(adapter = role, endpoint = %endpoint.endpoint_origin(), "HTTP adapter uses plaintext transport");
+    }
 }
 
 async fn shutdown_signal() {

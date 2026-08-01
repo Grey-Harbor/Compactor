@@ -57,6 +57,13 @@ performed on the host; use a read-only directory mount or your platform's atomic
 configuration projection and verify the behavior. See
 [Configure the JSON redirect source](configure-json-source.md) before rollout.
 
+To use remote adapters, set their selector and endpoint environment variables and
+omit the corresponding file mount when it is no longer selected. Mount bearer
+token files read-only under `/run/secrets`; do not put credential values in the
+image or Compose file. The production image uses the normal system certificate
+roots and supports no insecure-TLS switch, custom CA, or mTLS configuration. See
+[Configure HTTP adapters](configure-http-adapters.md).
+
 ## Stop without deleting events
 
 ```sh

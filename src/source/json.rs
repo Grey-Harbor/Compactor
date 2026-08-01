@@ -1,16 +1,13 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
+use crate::domain::{CanonicalUrl, RedirectDefinition, RedirectSource, RedirectSourceError};
 use async_trait::async_trait;
 use serde::Deserialize;
-use url::Url;
 
-use crate::domain::{
-    CanonicalUrl, RedirectDefinition, RedirectId, RedirectSource, RedirectSourceError,
-    RedirectStatus, ResponseHeaders,
-};
+use super::record::RawRedirect;
 
 #[derive(Debug)]
 pub struct JsonRedirectSource {
@@ -21,17 +18,6 @@ pub struct JsonRedirectSource {
 #[serde(deny_unknown_fields)]
 struct Document {
     redirects: Vec<RawRedirect>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawRedirect {
-    id: String,
-    canonical_url: String,
-    redirect_url: String,
-    status_code: u16,
-    #[serde(default)]
-    response_headers: BTreeMap<String, String>,
 }
 
 impl JsonRedirectSource {
@@ -73,42 +59,15 @@ fn parse_document(
     let mut ids = HashSet::with_capacity(document.redirects.len());
 
     for raw in document.redirects {
-        let id = RedirectId::new(raw.id)
-            .map_err(|error| RedirectSourceError::new(format!("invalid redirect ID: {error}")))?;
+        let definition = raw.into_definition()?;
+        let id = definition.id.clone();
         if !ids.insert(id.clone()) {
             return Err(RedirectSourceError::new(format!(
                 "duplicate redirect ID {id}"
             )));
         }
 
-        let canonical_url = CanonicalUrl::parse(&raw.canonical_url).map_err(|error| {
-            RedirectSourceError::new(format!("invalid canonical URL for redirect {id}: {error}"))
-        })?;
-        let redirect_url = Url::parse(&raw.redirect_url).map_err(|error| {
-            RedirectSourceError::new(format!(
-                "invalid destination URL for redirect {id}: {error}"
-            ))
-        })?;
-        if redirect_url.scheme().is_empty() {
-            return Err(RedirectSourceError::new(format!(
-                "destination URL for redirect {id} must be absolute"
-            )));
-        }
-        let status_code = RedirectStatus::try_from(raw.status_code)
-            .map_err(|error| RedirectSourceError::new(format!("{error} for redirect {id}")))?;
-        let response_headers =
-            ResponseHeaders::try_from_strings(raw.response_headers).map_err(|error| {
-                RedirectSourceError::new(format!(
-                    "invalid response headers for redirect {id}: {error}"
-                ))
-            })?;
-        let definition = RedirectDefinition {
-            id,
-            canonical_url: canonical_url.clone(),
-            redirect_url,
-            status_code,
-            response_headers,
-        };
+        let canonical_url = definition.canonical_url.clone();
         if redirects
             .insert(canonical_url.clone(), definition)
             .is_some()

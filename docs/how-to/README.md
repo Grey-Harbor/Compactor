@@ -7,6 +7,8 @@ to complete a specific operational task:
   replace redirect definitions safely.
 - [Configure JSONL events](configure-jsonl-events.md) — choose a writable output,
   inspect events, and plan collection or rotation.
+- [Configure HTTP adapters](configure-http-adapters.md) — select remote source or
+  sink endpoints, credentials, headers, limits, rollout, and rollback.
 - [Deploy with Docker](deploy-with-docker.md) — run the non-root production image
   with persistent event storage.
 - [Run behind a reverse proxy](reverse-proxy.md) — reconstruct public HTTPS URLs

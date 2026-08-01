@@ -1,8 +1,8 @@
 # Compactor v0.2.0
 
-Compactor v0.2.0 introduces a source-independent cached redirect runtime. Every
-source now resolves authoritative state through the same bounded,
-stale-while-revalidate lifecycle.
+Compactor v0.2.0 introduces a source-independent cached redirect runtime plus
+provider-neutral HTTP source and event sink adapters. Every source resolves
+authoritative state through the same bounded, stale-while-revalidate lifecycle.
 
 ## Highlights
 
@@ -17,9 +17,14 @@ stale-while-revalidate lifecycle.
   atomically replaced documents during authoritative resolution.
 - Drains background redirect refreshes during graceful shutdown while preserving
   the existing redirect, proxy, privacy-aware event, and JSONL sink behavior.
+- Adds bounded one-key HTTP source lookups and one-POST event delivery with shared
+  pooled rustls transport, bearer or static-header authentication, strict response
+  validation, and no adapter retries.
+- Selects source and sink adapters independently, includes a runnable local mock,
+  and keeps health probes independent from remote services.
 - Includes a non-root production container for Linux AMD64 and ARM64.
-- Provides focused contract and adapter tests, full JSON-to-HTTP-to-JSONL
-  integration coverage, and a non-root container runtime smoke test.
+- Provides focused contract and adapter tests, JSON and HTTP integration coverage,
+  and non-root container smoke tests for file and remote adapter compositions.
 
 ## Container
 
