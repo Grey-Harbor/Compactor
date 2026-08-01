@@ -62,6 +62,9 @@ refactor.
   refactors.
 - Update tests, documentation, and architecture together when their contract
   changes.
+- Docker-based tests and smoke checks must remove every Docker asset they create
+  after completion or failure, including containers, images, networks, volumes,
+  and temporary files. Never remove pre-existing or user-owned Docker assets.
 
 ## Licensing
 
