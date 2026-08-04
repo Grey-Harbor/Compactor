@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { PageArticle, PageRoot } from 'fumadocs-ui/layouts/docs/page';
 import { DocsBody, DocsDescription, DocsTitle } from 'fumadocs-ui/page';
 
+import { SiteFooter } from '@/components/site-footer';
 import { getDocDescription, getDocPage, getDocParams, routeFromSlug } from '@/lib/docs';
 import { titleForDoc } from '@/lib/format';
 import { buildPageMetadata } from '@/lib/seo';
@@ -75,6 +76,7 @@ export default async function DocsPageRoute({ params }: DocsPageProps) {
           </PageArticle>
         </PageRoot>
       </div>
+      <SiteFooter />
     </main>
   );
 }
