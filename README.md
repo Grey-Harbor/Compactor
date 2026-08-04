@@ -6,6 +6,8 @@
 
 **Make the redirect. Keep the machinery small.**
 
+[Project website](https://compactor.greyharborsoftware.com)
+
 Compactor is a lightweight, adapter-driven URL redirection service. Redirect
 definitions are supplied through a source adapter, while request outcomes are
 emitted through an independent event adapter. The reference implementation uses
@@ -40,7 +42,6 @@ ownership for proxy trust, event retention, source rollout, and rollback using t
 
 ## Documentation
 
-- [Compactor website](https://compactor.greyharborsoftware.com)
 - [Documentation index](docs/README.md)
 - [Getting started](docs/tutorials/getting-started.md)
 - [Building from source](docs/tutorials/building-from-source.md)
