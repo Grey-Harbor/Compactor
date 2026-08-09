@@ -9,16 +9,17 @@ a control plane, custom API, or persistence gateway.
 Compactor sends one authoritative lookup:
 
 ```http
-GET /resolve?tenant=public&url=https%3A%2F%2Fgo.example%2Fdocs HTTP/1.1
+GET /resolve?url=https%3A%2F%2Fgo.example%2Fdocs HTTP/1.1
 Accept: application/json
 User-Agent: Compactor/0.2.0
 Authorization: Bearer <configured-token>
 ```
 
-The endpoint's existing query parameters remain in order and Compactor appends
-one percent-encoded `url` value containing the query-free canonical key. An
-endpoint already containing any `url` parameter is invalid. Incoming client
-headers are never forwarded.
+This protocol has no built-in tenant parameter. If the configured endpoint has
+provider-defined query parameters, they remain in order and Compactor appends one
+percent-encoded `url` value containing the query-free canonical key. An endpoint
+already containing any `url` parameter is invalid. Incoming client headers are
+never forwarded.
 
 `200 OK` requires an unencoded `application/json` or `application/*+json` body.
 An optional media-type parameter such as `charset=utf-8` is accepted. The default

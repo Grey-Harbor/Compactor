@@ -4,12 +4,18 @@ Use this guide when an authoritative service should resolve redirects, receive
 events, or do both. Source and sink selection is independent; keep the JSON or
 JSONL side when only one remote integration is needed.
 
-Select the source and provide its complete endpoint URL:
+Select the source and provide the actual endpoint operated by your control plane:
 
 ```sh
 export COMPACTOR_SOURCE_TYPE=http
-export COMPACTOR_HTTP_SOURCE_URL=https://control.example/v1/resolve?tenant=public
+export COMPACTOR_HTTP_SOURCE_URL=https://control.example/v1/resolve
 ```
+
+`control.example` is a documentation hostname, so replace it with the endpoint
+your deployment owns. Compactor has no tenant model and supplies no tenant
+definition. If the provider requires a routing query parameter, include its
+provider-defined name and value in this URL; Compactor preserves it and appends
+the canonical redirect key as `url`.
 
 Select the event sink independently:
 
@@ -31,17 +37,14 @@ tokens and never prints credential values. Rotate a token by replacing its file
 and restarting Compactor; environment and token-file configuration is read only
 at startup.
 
-Static integration headers are JSON objects with string values:
-
-```sh
-export COMPACTOR_HTTP_SOURCE_STATIC_HEADERS_JSON='{"X-Tenant":"public"}'
-export COMPACTOR_HTTP_EVENT_SINK_STATIC_HEADERS_JSON='{"X-Stream":"redirects"}'
-```
-
-Do not infer tenant names, routes, credentials, or authorization policy. Those
-are deployment decisions. Compactor validates header syntax and rejects transport
-and protocol headers it owns. A static `Authorization` value is allowed only when
-bearer authentication is not configured.
+Static integration headers are optional. Leave
+`COMPACTOR_HTTP_SOURCE_STATIC_HEADERS_JSON` and
+`COMPACTOR_HTTP_EVENT_SINK_STATIC_HEADERS_JSON` unset unless the provider's
+contract requires specific static header names and values. Do not infer tenant
+names, routes, credentials, header values, or authorization policy. Those are
+deployment decisions. Compactor validates configured header syntax and rejects
+transport and protocol headers it owns. A static `Authorization` value is allowed
+only when bearer authentication is not configured.
 
 Tune bounded calls only after measuring the dependency:
 
