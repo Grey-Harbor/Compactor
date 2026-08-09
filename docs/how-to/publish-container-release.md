@@ -41,14 +41,17 @@ Never move, recreate, or force-push a published release tag. Prepare the next
 version when a correction is required.
 
 The release workflow runs the complete CI gate before publishing Linux AMD64 and
-ARM64 images to GitHub Container Registry. For `v0.2.0`, it publishes:
+ARM64 images to GitHub Container Registry. It preserves the annotated release tag
+as the immutable image tag and updates `latest`. For example, `v0.3.0` publishes:
 
 ```text
-ghcr.io/grey-harbor/compactor:0.2.0
-ghcr.io/grey-harbor/compactor:0.1
-ghcr.io/grey-harbor/compactor:0
+ghcr.io/grey-harbor/compactor:v0.3.0
 ghcr.io/grey-harbor/compactor:latest
 ```
+
+There are no major or minor image aliases. The published v0.2.0 release predates
+this policy and remains available at its historical `:0.2.0` tag; do not rewrite
+published tags to alter that record.
 
 Tags fail validation unless they:
 

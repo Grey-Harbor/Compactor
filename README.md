@@ -70,14 +70,16 @@ shutdown. The CI workflow does not publish artifacts.
 
 Pushing a stable semantic version tag such as `v0.2.0` runs the complete CI gate,
 then publishes Linux AMD64 and ARM64 images with provenance and SBOM attestations
-to GitHub Container Registry:
+to GitHub Container Registry. New releases preserve that `v` prefix on the
+immutable image tag and also update `latest`:
 
 ```sh
-docker pull ghcr.io/grey-harbor/compactor:0.2.0
+docker pull ghcr.io/grey-harbor/compactor:vMAJOR.MINOR.PATCH
 ```
 
-Release images are also tagged with their minor, major, and `latest` aliases. No
-workflow deploys a running Compactor service.
+The already-published v0.2.0 image retains its historical
+`ghcr.io/grey-harbor/compactor:0.2.0` tag. Published tags are never rewritten.
+No workflow deploys a running Compactor service.
 
 ## License
 
