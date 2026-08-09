@@ -84,9 +84,11 @@ deployment without explicit maintainer authorization.
 `RELEASE.md` is the canonical summary and annotated-tag description for the
 current release. Keep its version aligned with `Cargo.toml`, update its summary
 whenever release-facing behavior changes, and create release tags with
-`git tag -a --cleanup=verbatim <version> -F RELEASE.md`. Verbatim cleanup is
-required so Git preserves Markdown headings in the tag description. Never rewrite
-a published tag; prepare `RELEASE.md` for the next version instead.
+`git tag -a --cleanup=verbatim v<version> -F RELEASE.md`. Release tags and their
+immutable container-image tags always begin with `v`; `latest` is the only moving
+image alias. Verbatim cleanup is required so Git preserves Markdown headings in
+the tag description. Never rewrite a published tag; prepare `RELEASE.md` for the
+next version instead.
 
 ## Git standards
 
@@ -128,13 +130,14 @@ Create a release tag only after the release pull request is merged and local
 the annotated tag:
 
 ```sh
-git tag -a --cleanup=verbatim <version> -F RELEASE.md
-git push origin <version>
+git tag -a --cleanup=verbatim v<version> -F RELEASE.md
+git push origin v<version>
 ```
 
 Never tag an unmerged working branch, move or recreate a published tag, or publish
 a release image from a branch. The tag push is the only action that triggers the
-container release workflow.
+container release workflow, which publishes the exact `v<version>` image tag and
+the moving `latest` alias.
 
 ## Review mindset
 
